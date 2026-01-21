@@ -1,0 +1,7 @@
+MetaTrader5
+pandas
+numpy
+ta-lib
+python-socketio
+requests
+python-dotenv
