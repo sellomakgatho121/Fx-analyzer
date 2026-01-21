@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const zmq = require('zeromq');
 
 const app = express();
 app.use(cors());
@@ -164,6 +165,50 @@ function generateTickerData() {
     });
 }
 
+// --- ZeroMQ Subscriber (Python Bridge) ---
+async function startZMQ() {
+    const sock = new zmq.Subscriber();
+
+    try {
+        sock.connect("tcp://127.0.0.1:5555");
+        sock.subscribe("signal");
+        sock.subscribe("ticker");
+        console.log("🔌 Connected to Python Engine via ZeroMQ");
+
+        for await (const [topic, message] of sock) {
+            const topicStr = topic.toString();
+            const msgStr = message.toString();
+
+            try {
+                const data = JSON.parse(msgStr);
+
+                if (topicStr === 'signal') {
+                    // Store and emit signal
+                    signalHistory.push(data);
+                    if (signalHistory.length > 100) signalHistory.shift();
+                    io.emit('fx-signal', data);
+                    console.log(`📊 [PY-SIGNAL] ${data.symbol} ${data.action} @ ${data.price}`);
+                } else if (topicStr === 'ticker') {
+                    // Update latest prices for ticker generation
+                    // In a full implementation, we'd merge this with the full ticker list
+                    // For now, we'll just emit it to the ticker-update event listeners if we want real-time single updates
+                    // Or we can update the 'basePrices' reference so the existing ticker generator uses new values
+
+                    if (basePrices[data.symbol.replace('/', '')]) {
+                        basePrices[data.symbol.replace('/', '')] = data.price;
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing ZMQ message:", e);
+            }
+        }
+    } catch (err) {
+        console.error("ZMQ Connection Error:", err);
+    }
+}
+
+startZMQ();
+
 // --- WebSocket Connection Handling ---
 io.on('connection', (socket) => {
     console.log('✅ Client connected:', socket.id);
@@ -172,19 +217,10 @@ io.on('connection', (socket) => {
     socket.emit('ticker-update', generateTickerData());
     socket.emit('signal-history', signalHistory.slice(-10));
 
-    // Signal stream (every 5-15 seconds for realistic feel)
-    const signalInterval = setInterval(() => {
-        if (Math.random() > 0.4) { // 60% chance of signal
-            const signal = generateSignal();
-            signalHistory.push(signal);
-            if (signalHistory.length > 100) signalHistory.shift();
+    // NOTE: We have removed the mock signalInterval. 
+    // Signals now come exclusively from the Python Engine via ZMQ.
 
-            socket.emit('fx-signal', signal);
-            console.log(`📊 Signal emitted: ${signal.action} ${signal.symbol} @ ${signal.price}`);
-        }
-    }, Math.random() * 5000 + 5000); // 5-10 seconds
-
-    // Ticker updates (every 2 seconds)
+    // Ticker updates (keep this for general market noise, but it uses updated basePrices)
     const tickerInterval = setInterval(() => {
         socket.emit('ticker-update', generateTickerData());
     }, 2000);
@@ -209,7 +245,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        clearInterval(signalInterval);
         clearInterval(tickerInterval);
         console.log('❌ Client disconnected:', socket.id);
     });
