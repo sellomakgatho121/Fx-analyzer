@@ -56,6 +56,65 @@ const riskFactors = [
     "Market positioning extremely one-sided - reversal risk.",
 ];
 
+// --- Signal Verification Engine ---
+function calculateSignalScore(signal) {
+    let score = 0;
+    const breakdown = {
+        technical: 0,
+        ai: 0,
+        risk: 0,
+        market: 0
+    };
+
+    // 1. Technical Confluence (Max 40)
+    // Simulated check: if indicators align with action
+    if (signal.indicators.trend === (signal.action === 'BUY' ? 'Upward' : 'Downward')) {
+        score += 20;
+        breakdown.technical += 20;
+    }
+    // RSI check
+    const rsi = signal.indicators.rsi;
+    if ((signal.action === 'BUY' && rsi < 40) || (signal.action === 'SELL' && rsi > 60)) {
+        score += 10;
+        breakdown.technical += 10;
+    }
+    // MACD confirmation (simplified)
+    if (Math.random() > 0.3) {
+        score += 10;
+        breakdown.technical += 10;
+    }
+
+    // 2. AI Confidence (Max 30)
+    // Directly map confidence to score portion
+    const aiScore = Math.floor(signal.confidence * 0.3 * 100);
+    score += aiScore;
+    breakdown.ai = aiScore;
+
+    // 3. Risk/Reward (Max 20)
+    // Randomize for simulation
+    const rrScore = Math.floor(Math.random() * 20);
+    score += rrScore;
+    breakdown.risk = rrScore;
+
+    // 4. Market Conditions (Max 10)
+    const marketScore = Math.floor(Math.random() * 10);
+    score += marketScore;
+    breakdown.market = marketScore;
+
+    // Determine verification level
+    let level = 'LOW';
+    if (score >= 80) level = 'HIGH';
+    else if (score >= 50) level = 'MEDIUM';
+
+    return {
+        score,
+        level,
+        breakdown,
+        verified: score >= 80,
+        timestamp: new Date().toISOString()
+    };
+}
+
 function generateSignal() {
     const symbol = symbols[Math.floor(Math.random() * 3)]; // Focus on majors
     const action = Math.random() > 0.5 ? 'BUY' : 'SELL';
@@ -66,7 +125,13 @@ function generateSignal() {
     const reasoning = aiReasonings[action][Math.floor(Math.random() * aiReasonings[action].length)];
     const risk = riskFactors[Math.floor(Math.random() * riskFactors.length)];
 
-    return {
+    const indicators = {
+        rsi: Math.floor(action === 'BUY' ? Math.random() * 20 + 20 : Math.random() * 20 + 65),
+        macd: action === 'BUY' ? 'Bullish Cross' : 'Bearish Cross',
+        trend: action === 'BUY' ? 'Upward' : 'Downward',
+    };
+
+    const signal = {
         id: Date.now(),
         symbol: symbol.slice(0, 3) + '/' + symbol.slice(3),
         action,
@@ -75,12 +140,13 @@ function generateSignal() {
         timestamp: new Date().toISOString(),
         ai_reasoning: reasoning,
         risk_factors: risk,
-        indicators: {
-            rsi: Math.floor(action === 'BUY' ? Math.random() * 20 + 20 : Math.random() * 20 + 65),
-            macd: action === 'BUY' ? 'Bullish Cross' : 'Bearish Cross',
-            trend: action === 'BUY' ? 'Upward' : 'Downward',
-        },
+        indicators,
     };
+
+    // Calculate Verification Score
+    signal.verification = calculateSignalScore(signal);
+
+    return signal;
 }
 
 function generateTickerData() {
