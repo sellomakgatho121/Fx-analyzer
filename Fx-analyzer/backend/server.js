@@ -3,6 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const zmq = require('zeromq');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -16,9 +18,21 @@ const io = new Server(server, {
     }
 });
 
-// --- In-Memory Data Store ---
-const signalHistory = [];
-const tradeHistory = [];
+// --- Database Connection ---
+const dbPath = path.resolve(__dirname, '../fx_analyzer.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) console.error('Error opening database:', err.message);
+    else console.log('📁 Connected to SQLite database:', dbPath);
+});
+
+// DB Helpers (Promisified)
+const dbAll = (sql, params = []) => new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+});
+
+const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) { err ? reject(err) : resolve(this); });
+});
 
 // --- Helper Functions ---
 const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCHF', 'USDCAD'];
@@ -30,125 +44,6 @@ const basePrices = {
     'USDCHF': 0.8876,
     'USDCAD': 1.3521,
 };
-
-const aiReasonings = {
-    BUY: [
-        "RSI oversold at 28 with bullish divergence on 4H timeframe. MACD histogram turning positive.",
-        "Price testing strong support at 38.2% Fibonacci retracement. Volume profile indicates accumulation.",
-        "Double bottom formation confirmed on 1H chart. Bullish engulfing candle at key support.",
-        "Oversold conditions met with hidden bullish divergence. Smart money accumulation detected.",
-        "Price bouncing off 200 EMA with strong bullish momentum. Institutional order flow positive.",
-    ],
-    SELL: [
-        "RSI overbought at 74 with bearish divergence on 4H timeframe. MACD crossing below signal.",
-        "Price rejected from 61.8% Fibonacci resistance. Distribution pattern forming.",
-        "Head and shoulders pattern confirmed. Neckline break with volume confirmation.",
-        "Overbought conditions with bearish engulfing at resistance. Smart money distribution phase.",
-        "Triple top formation at key resistance. Momentum indicators showing weakness.",
-    ],
-};
-
-const riskFactors = [
-    "High volatility expected due to upcoming FOMC meeting.",
-    "NFP data release in 2 hours - exercise caution.",
-    "EUR/USD correlation with risk sentiment elevated.",
-    "Low liquidity period - wider spreads expected.",
-    "Central bank speech scheduled - potential volatility spike.",
-    "Market positioning extremely one-sided - reversal risk.",
-];
-
-// --- Signal Verification Engine ---
-function calculateSignalScore(signal) {
-    let score = 0;
-    const breakdown = {
-        technical: 0,
-        ai: 0,
-        risk: 0,
-        market: 0
-    };
-
-    // 1. Technical Confluence (Max 40)
-    // Simulated check: if indicators align with action
-    if (signal.indicators.trend === (signal.action === 'BUY' ? 'Upward' : 'Downward')) {
-        score += 20;
-        breakdown.technical += 20;
-    }
-    // RSI check
-    const rsi = signal.indicators.rsi;
-    if ((signal.action === 'BUY' && rsi < 40) || (signal.action === 'SELL' && rsi > 60)) {
-        score += 10;
-        breakdown.technical += 10;
-    }
-    // MACD confirmation (simplified)
-    if (Math.random() > 0.3) {
-        score += 10;
-        breakdown.technical += 10;
-    }
-
-    // 2. AI Confidence (Max 30)
-    // Directly map confidence to score portion
-    const aiScore = Math.floor(signal.confidence * 0.3 * 100);
-    score += aiScore;
-    breakdown.ai = aiScore;
-
-    // 3. Risk/Reward (Max 20)
-    // Randomize for simulation
-    const rrScore = Math.floor(Math.random() * 20);
-    score += rrScore;
-    breakdown.risk = rrScore;
-
-    // 4. Market Conditions (Max 10)
-    const marketScore = Math.floor(Math.random() * 10);
-    score += marketScore;
-    breakdown.market = marketScore;
-
-    // Determine verification level
-    let level = 'LOW';
-    if (score >= 80) level = 'HIGH';
-    else if (score >= 50) level = 'MEDIUM';
-
-    return {
-        score,
-        level,
-        breakdown,
-        verified: score >= 80,
-        timestamp: new Date().toISOString()
-    };
-}
-
-function generateSignal() {
-    const symbol = symbols[Math.floor(Math.random() * 3)]; // Focus on majors
-    const action = Math.random() > 0.5 ? 'BUY' : 'SELL';
-    const confidence = (Math.random() * 0.2 + 0.75); // 75% - 95%
-    const basePrice = basePrices[symbol] || 1.0;
-    const price = (basePrice + (Math.random() - 0.5) * 0.005).toFixed(5);
-
-    const reasoning = aiReasonings[action][Math.floor(Math.random() * aiReasonings[action].length)];
-    const risk = riskFactors[Math.floor(Math.random() * riskFactors.length)];
-
-    const indicators = {
-        rsi: Math.floor(action === 'BUY' ? Math.random() * 20 + 20 : Math.random() * 20 + 65),
-        macd: action === 'BUY' ? 'Bullish Cross' : 'Bearish Cross',
-        trend: action === 'BUY' ? 'Upward' : 'Downward',
-    };
-
-    const signal = {
-        id: Date.now(),
-        symbol: symbol.slice(0, 3) + '/' + symbol.slice(3),
-        action,
-        confidence: parseFloat(confidence.toFixed(2)),
-        price,
-        timestamp: new Date().toISOString(),
-        ai_reasoning: reasoning,
-        risk_factors: risk,
-        indicators,
-    };
-
-    // Calculate Verification Score
-    signal.verification = calculateSignalScore(signal);
-
-    return signal;
-}
 
 function generateTickerData() {
     return Object.entries(basePrices).map(([symbol, basePrice]) => {
@@ -183,17 +78,11 @@ async function startZMQ() {
                 const data = JSON.parse(msgStr);
 
                 if (topicStr === 'signal') {
-                    // Store and emit signal
-                    signalHistory.push(data);
-                    if (signalHistory.length > 100) signalHistory.shift();
+                    // Signal is already stored in DB by Python
+                    // Just emit to frontend for live updates
                     io.emit('fx-signal', data);
                     console.log(`📊 [PY-SIGNAL] ${data.symbol} ${data.action} @ ${data.price}`);
                 } else if (topicStr === 'ticker') {
-                    // Update latest prices for ticker generation
-                    // In a full implementation, we'd merge this with the full ticker list
-                    // For now, we'll just emit it to the ticker-update event listeners if we want real-time single updates
-                    // Or we can update the 'basePrices' reference so the existing ticker generator uses new values
-
                     if (basePrices[data.symbol.replace('/', '')]) {
                         basePrices[data.symbol.replace('/', '')] = data.price;
                     }
@@ -210,38 +99,133 @@ async function startZMQ() {
 startZMQ();
 
 // --- WebSocket Connection Handling ---
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log('✅ Client connected:', socket.id);
 
     // Send initial data
     socket.emit('ticker-update', generateTickerData());
-    socket.emit('signal-history', signalHistory.slice(-10));
 
-    // NOTE: We have removed the mock signalInterval. 
-    // Signals now come exclusively from the Python Engine via ZMQ.
+    // Fetch recent history from DB
+    try {
+        const rows = await dbAll('SELECT * FROM signals ORDER BY timestamp DESC LIMIT 10');
+        // Transform DB rows back to API format (merging raw_data if available)
+        const history = rows.map(r => {
+            try {
+                return { ...JSON.parse(r.raw_data), id: r.id };
+            } catch (e) {
+                return r; // Fallback
+            }
+        });
+        socket.emit('signal-history', history.reverse()); // Frontend expects oldest -> newest usually
+    } catch (e) {
+        console.error("Error fetching history:", e);
+    }
 
-    // Ticker updates (keep this for general market noise, but it uses updated basePrices)
     const tickerInterval = setInterval(() => {
         socket.emit('ticker-update', generateTickerData());
     }, 2000);
 
+    // --- Risk Management Settings ---
+    let riskSettings = {
+        maxDailyDrawdown: 500, // USD
+        maxOpenPositions: 3,
+        maxRiskPerTrade: 2, // Percent
+        tradingEnabled: true
+    };
+
+    // Calculate current stats from DB
+    async function getDailyStats() {
+        const today = new Date().toISOString().split('T')[0];
+        try {
+            // Need to store PL in trades table properly. 
+            // The table schema has: pl REAL check database.py
+            const trades = await dbAll("SELECT pl, status FROM trades WHERE timestamp LIKE ? || '%'", [today]);
+
+            const profitLoss = trades.reduce((acc, t) => acc + (t.pl || 0), 0);
+            const openPositions = trades.filter(t => t.status === 'open').length; // Check 'open' casing in DB logic
+
+            return { profitLoss, openPositions };
+        } catch (e) {
+            console.error("Stats DB Error:", e);
+            return { profitLoss: 0, openPositions: 0 };
+        }
+    }
+
     // Handle trade execution request
-    socket.on('execute-trade', (tradeData) => {
+    socket.on('execute-trade', async (tradeData) => {
         console.log('📈 Trade execution requested:', tradeData);
 
+        // 1. RISK SHIELD CHECK
+        if (!riskSettings.tradingEnabled) {
+            socket.emit('trade-rejected', { reason: 'Trading is globally disabled via Risk Shield.' });
+            return;
+        }
+
+        const stats = await getDailyStats();
+
+        // Check Max Open Positions (Simulated)
+        // With DB, we could count real open positions. For now, trust stats.
+        if (stats.openPositions >= riskSettings.maxOpenPositions) {
+            socket.emit('trade-rejected', { reason: `Max open positions (${riskSettings.maxOpenPositions}) reached.` });
+            return;
+        }
+
+        // Check Daily Drawdown
+        if (stats.profitLoss <= -riskSettings.maxDailyDrawdown) {
+            socket.emit('trade-rejected', { reason: `Daily drawdown limit ($${riskSettings.maxDailyDrawdown}) reached.` });
+            return;
+        }
+
         // Simulate execution delay
-        setTimeout(() => {
+        setTimeout(async () => {
+            // Simulated P/L for the trade (Random win/loss for history tracking)
+            const isWin = Math.random() > 0.4; // 60% win rate
+            const tradePL = isWin ? (Math.random() * 50 + 10) : -(Math.random() * 30 + 10);
+            const timestamp = new Date().toISOString();
+
             const executedTrade = {
                 ...tradeData,
-                executedAt: new Date().toISOString(),
-                status: 'filled',
+                executedAt: timestamp,
+                status: 'closed', // Auto-close for simulation
                 executionPrice: tradeData.price,
+                pl: parseFloat(tradePL.toFixed(2)),
+                plType: isWin ? 'profit' : 'loss'
             };
 
-            tradeHistory.push(executedTrade);
-            socket.emit('trade-executed', executedTrade);
-            console.log('✅ Trade executed:', executedTrade);
+            // Store in DB
+            try {
+                // Table: trades (timestamp, symbol, action, entry_price, status) + need to add PL column in DB schema?
+                // database.py schema: pl REAL exists.
+                await dbRun(`
+                   INSERT INTO trades (timestamp, symbol, action, entry_price, pl, status)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                `, [
+                    timestamp,
+                    executedTrade.symbol,
+                    executedTrade.action,
+                    executedTrade.price,
+                    executedTrade.pl,
+                    executedTrade.status
+                ]);
+
+                socket.emit('trade-executed', executedTrade);
+                console.log('✅ Trade executed & stored:', executedTrade);
+
+                // Emit updated stats
+                io.emit('risk-stats-update', await getDailyStats());
+
+            } catch (e) {
+                console.error("DB Insert Error:", e);
+                socket.emit('trade-rejected', { reason: 'Database error during execution.' });
+            }
         }, 500);
+    });
+
+    // Handle Risk Settings Updates from Frontend
+    socket.on('update-risk-settings', (newSettings) => {
+        riskSettings = { ...riskSettings, ...newSettings };
+        console.log('🛡️ Risk Settings Updated:', riskSettings);
+        io.emit('risk-settings-updated', riskSettings);
     });
 
     socket.on('disconnect', () => {
@@ -256,20 +240,60 @@ app.get('/api/health', (req, res) => {
         status: 'healthy',
         uptime: process.uptime(),
         connections: io.engine.clientsCount,
+        db: db ? 'connected' : 'disconnected'
     });
 });
 
-app.get('/api/signals', (req, res) => {
+app.get('/api/signals', async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
-    res.json(signalHistory.slice(-limit));
+    try {
+        const rows = await dbAll('SELECT * FROM signals ORDER BY timestamp DESC LIMIT ?', [limit]);
+        const signals = rows.map(r => {
+            try {
+                return { ...JSON.parse(r.raw_data), id: r.id };
+            } catch (e) { return r; }
+        });
+        res.json(signals);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
-app.get('/api/trades', (req, res) => {
-    res.json(tradeHistory);
+app.get('/api/trades', async (req, res) => {
+    try {
+        const rows = await dbAll('SELECT * FROM trades ORDER BY timestamp DESC LIMIT 50');
+        res.json(rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get('/api/ticker', (req, res) => {
     res.json(generateTickerData());
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const totalTradesObj = await dbAll('SELECT COUNT(*) as count FROM trades');
+        const totalTrades = totalTradesObj[0].count;
+
+        const winningTradesObj = await dbAll('SELECT COUNT(*) as count FROM trades WHERE pl > 0');
+        const winningTrades = winningTradesObj[0].count;
+
+        const totalProfitObj = await dbAll('SELECT SUM(pl) as total FROM trades');
+        const totalProfit = totalProfitObj[0].total || 0;
+
+        const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) : 0;
+
+        res.json({
+            totalTrades,
+            winningTrades,
+            totalProfit: totalProfit.toFixed(2),
+            winRate: parseFloat(winRate)
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // --- Server Start ---

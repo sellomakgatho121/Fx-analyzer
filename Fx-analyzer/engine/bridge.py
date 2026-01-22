@@ -9,6 +9,7 @@ from analyzer import TechnicalAnalyzer
 from executor import MT5Executor
 from llm_analyzer import LLMAnalyzer
 from data_feed import DataFeed
+import database # Local DB module
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,6 +29,9 @@ class EngineBridge:
         self.executor = MT5Executor()
         self.llm = LLMAnalyzer()
         self.data_feed = DataFeed()
+        
+        # Initialize Database
+        database.init_db()
 
     def run(self):
         logging.info("Engine Bridge Running...")
@@ -64,6 +68,10 @@ class EngineBridge:
                         # Add tracking ID
                         signal['id'] = int(time.time() * 1000)
                         signal['source'] = 'PYTHON_ENGINE_LLM'
+                        
+                        # Store in DB
+                        database.store_signal(signal)
+                        logging.info(f"Signal stored in DB: {signal['id']}")
                         
                         self.socket.send_string(f"signal {json.dumps(signal)}")
                     
