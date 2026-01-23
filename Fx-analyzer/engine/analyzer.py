@@ -106,3 +106,55 @@ class TechnicalAnalyzer:
             }
             
         return None
+
+    def analyze_daily(self, df: pd.DataFrame) -> dict:
+        """
+        Performs a simplified D1 trend analysis.
+        """
+        if df.empty or len(df) < 50:
+            return None
+
+        last_row = df.iloc[-1]
+        
+        # Simple Trend based on EMA 50
+        ema_50 = last_row.get('EMA_50')
+        close = last_row.get('close')
+        
+        trend = "NEUTRAL"
+        if ema_50 and close:
+            if close > ema_50: trend = "BULLISH"
+            elif close < ema_50: trend = "BEARISH"
+
+        return {
+            "trend": trend,
+            "rsi": round(float(last_row.get('RSI', 50)), 1),
+            "price": float(close)
+        }
+
+    def get_technical_summary(self, df: pd.DataFrame, symbol: str) -> dict:
+        """
+        Extracts raw technical metrics for the TechnicalAgent.
+        """
+        if df.empty: return {}
+        last = df.iloc[-1]
+        
+        # Determine Trend
+        ema50 = last.get('EMA_50')
+        ema200 = last.get('EMA_200')
+        close = last.get('close')
+        trend = "Neutral"
+        if ema50 and ema200:
+            if close > ema50 > ema200: trend = "Strong Uptrend"
+            elif close < ema50 < ema200: trend = "Strong Downtrend"
+            elif close > ema50: trend = "Uptrend"
+            elif close < ema50: trend = "Downtrend"
+            
+        return {
+            "symbol": symbol,
+            "price": float(close),
+            "rsi": round(float(last.get('RSI', 50)), 2),
+            "macd": round(float(last.get('MACD_12_26_9', 0)), 4),
+            "trend": trend,
+            "bb_status": "Upper Band Break" if close > last.get('BBU_20_2.0', 999999) else "Lower Band Break" if close < last.get('BBL_20_2.0', 0) else "Within Bands",
+            "atr": 0.0010 # Placeholder
+        }

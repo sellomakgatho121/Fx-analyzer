@@ -228,6 +228,46 @@ io.on('connection', async (socket) => {
         io.emit('risk-settings-updated', riskSettings);
     });
 
+    // --- LLM Multi-Model Handling ---
+    const zmqReq = new zmq.Request();
+    let zmqReqConnected = false;
+
+    async function sendCommand(payload) {
+        if (!zmqReqConnected) {
+            console.log("Connecting to Engine Command Socket...");
+            zmqReq.connect("tcp://127.0.0.1:5556");
+            zmqReqConnected = true;
+        }
+        try {
+            await zmqReq.send(JSON.stringify(payload));
+            const [result] = await zmqReq.receive();
+            return JSON.parse(result.toString());
+        } catch (e) {
+            console.error("ZMQ Command Failed:", e);
+            return { status: "error", message: "Engine Unreachable" };
+        }
+    }
+
+    socket.on('get-llm-models', async () => {
+        const result = await sendCommand({ cmd: 'GET_MODELS' });
+        if (result.status === 'ok') {
+            socket.emit('llm-models-list', result.models);
+        }
+    });
+
+    socket.on('switch-llm-model', async (modelName) => {
+        console.log('Switching LLM to:', modelName);
+        const result = await sendCommand({ cmd: 'SET_LLM_MODEL', model: modelName });
+
+        // Notify all clients of the change
+        if (result.status === 'ok') {
+            io.emit('notification', { type: 'success', title: 'Model Switched', message: result.message });
+            io.emit('model-changed', modelName);
+        } else {
+            socket.emit('notification', { type: 'error', title: 'Switch Failed', message: result.message });
+        }
+    });
+
     socket.on('disconnect', () => {
         clearInterval(tickerInterval);
         console.log('❌ Client disconnected:', socket.id);

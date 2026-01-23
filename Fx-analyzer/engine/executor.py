@@ -71,3 +71,24 @@ class MT5Executor:
             return {"status": "failed", "reason": result.retcode}
 
         return {"status": "filled", "ticket": result.order}
+
+    def modify_position(self, ticket, sl, tp):
+        """
+        Modifies an existing position's SL/TP.
+        """
+        if not self.connected:
+            return {"status": "mock_modified", "ticket": ticket}
+
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl": sl,
+            "tp": tp
+        }
+
+        result = mt5.order_send(request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+             logging.error(f"Modification failed: {result.retcode}")
+             return {"status": "failed", "reason": result.retcode}
+        
+        return {"status": "modified", "ticket": result.order}
