@@ -1,65 +1,144 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import { useSocket } from '@/hooks/useSocket';
+import { TickerBar } from '@/components/TickerBar';
+import { SignalCard } from '@/components/SignalCard';
+import { StatsPanel } from '@/components/StatsPanel';
+import { TradeHistory } from '@/components/TradeHistory';
+import { RiskShield } from '@/components/RiskShield';
+import { ConnectionStatus } from '@/components/ConnectionStatus';
+import { Notification } from '@/components/Notification';
+import { PriceChart } from '@/components/PriceChart';
+import { Activity, BarChart3, Zap } from 'lucide-react';
+
+export default function Dashboard() {
+  const {
+    isConnected,
+    ticker,
+    signals,
+    trades,
+    stats,
+    riskSettings,
+    notification,
+    executeTrade,
+    updateRiskSettings,
+    clearNotification,
+  } = useSocket();
+
+  // Get most recent signals for display
+  const recentSignals = signals.slice(-6).reverse();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen flex flex-col bg-[var(--bg-primary)]">
+      {/* Notification Toast */}
+      <Notification notification={notification} onClose={clearNotification} />
+
+      {/* Ticker Bar */}
+      <TickerBar data={ticker} />
+
+      {/* Header */}
+      <header className="px-6 py-4 border-b border-[var(--border-subtle)]">
+        <div className="max-w-[1800px] mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30">
+              <Activity className="w-6 h-6 text-[var(--cyan)]" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                FX Analyzer
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-[var(--cyan)] border border-cyan-500/30">
+                  PRO
+                </span>
+              </h1>
+              <p className="text-xs text-[var(--text-muted)]">
+                Institutional-Grade Trading Signals
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <ConnectionStatus isConnected={isConnected} />
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </header>
+
+      {/* Main Content */}
+      <main className="flex-1 p-6">
+        <div className="max-w-[1800px] mx-auto space-y-6">
+          {/* Stats Panel */}
+          <StatsPanel stats={stats} />
+
+          {/* Main Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Signals Grid - Takes 8 columns */}
+            <div className="lg:col-span-8 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-[var(--gold)]" />
+                  Live Signals
+                </h2>
+                <span className="text-xs text-[var(--text-muted)]">
+                  {signals.length} signals received
+                </span>
+              </div>
+
+              {recentSignals.length === 0 ? (
+                <div className="card flex flex-col items-center justify-center py-16 text-center">
+                  <div className="p-4 rounded-full bg-[var(--bg-tertiary)] mb-4">
+                    <BarChart3 className="w-8 h-8 text-[var(--text-muted)]" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+                    Waiting for Signals
+                  </h3>
+                  <p className="text-sm text-[var(--text-muted)] max-w-md">
+                    The AI analysis engine is monitoring the markets. Signals will appear here when trading opportunities are detected.
+                  </p>
+                  {!isConnected && (
+                    <p className="text-xs text-[var(--ruby)] mt-4">
+                      ⚠️ Not connected to server. Make sure the backend is running.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {recentSignals.map((signal, index) => (
+                    <SignalCard
+                      key={signal.id || `${signal.symbol}-${signal.timestamp}-${index}`}
+                      signal={signal}
+                      onExecute={executeTrade}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Right Sidebar - Takes 4 columns */}
+            <div className="lg:col-span-4 space-y-6">
+              {/* Price Chart */}
+              <PriceChart ticker={ticker} symbol="EUR/USD" />
+
+              {/* Risk Shield */}
+              <RiskShield
+                settings={riskSettings}
+                onUpdate={updateRiskSettings}
+              />
+
+              {/* Trade History */}
+              <div className="h-[400px]">
+                <TradeHistory trades={trades} />
+              </div>
+            </div>
+          </div>
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="px-6 py-4 border-t border-[var(--border-subtle)]">
+        <div className="max-w-[1800px] mx-auto flex items-center justify-between text-xs text-[var(--text-muted)]">
+          <p>© 2026 FX Analyzer Pro. For educational purposes only.</p>
+          <p>Powered by Google Gemini AI</p>
+        </div>
+      </footer>
     </div>
   );
 }
