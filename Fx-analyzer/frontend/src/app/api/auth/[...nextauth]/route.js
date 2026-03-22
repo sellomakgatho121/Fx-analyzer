@@ -13,9 +13,13 @@ const handler = NextAuth({
       },
       async authorize(credentials) {
         try {
+          const apiKey = process.env.API_KEY || 'fx-analyzer-secure-key-2026';
           const res = await fetch(`${BACKEND_URL}/api/auth/verify`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "x-api-key": apiKey
+            },
             body: JSON.stringify({
               username: credentials.username,
               password: credentials.password,

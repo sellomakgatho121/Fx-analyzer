@@ -26,7 +26,12 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users`);
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'fx-analyzer-secure-key-2026';
+      const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
+        headers: {
+          "x-api-key": apiKey
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setUsers(data);

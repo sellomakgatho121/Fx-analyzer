@@ -7,13 +7,45 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
-app.use(cors());
+
+// Secure CORS - Only allow the Vercel frontend and local development
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://frontend-jjh4l1mja-sellomakgatho121-2317s-projects.vercel.app'
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl) or allowed origins
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST']
+}));
 app.use(express.json());
+
+// --- API Key Protection Middleware ---
+// Protects all backend routes from public access
+const API_KEY = process.env.API_KEY || 'fx-analyzer-secure-key-2026';
+
+app.use((req, res, next) => {
+    // Health check is always public for Render
+    if (req.path === '/api/health') return next();
+
+    const clientKey = req.headers['x-api-key'];
+    if (!clientKey || clientKey !== API_KEY) {
+        return res.status(403).json({ error: 'Forbidden: Invalid API Key' });
+    }
+    next();
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: allowedOrigins,
         methods: ["GET", "POST"]
     }
 });
