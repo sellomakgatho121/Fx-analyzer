@@ -57,7 +57,7 @@ def init_db():
         cursor.execute("SELECT COUNT(*) FROM users")
         if cursor.fetchone()[0] == 0:
             cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
-                              VALUES ('admin@fx.com', 'admin', 'System Admin', 'admin', 'active', ?)''', (datetime.now().isoformat(),))
+                              VALUES ('devtest@fx.com', 'FxAdmin-9k$2pQ#8wLxZ5v!R@1', 'System Admin', 'admin', 'active', ?)''', (datetime.now().isoformat(),))
             cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
                               VALUES ('user@fx.com', 'password', 'Free User', 'user', 'inactive', ?)''', (datetime.now().isoformat(),))
 

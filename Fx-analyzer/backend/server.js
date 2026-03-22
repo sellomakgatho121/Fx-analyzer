@@ -152,7 +152,7 @@ async function startZMQ() {
 
 startZMQ();
 
-// --- Auth API Endpoint for NextAuth ---
+// --- Auth API Endpoint for NextAuth (Credentials) ---
 app.post('/api/auth/verify', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -183,6 +183,23 @@ app.post('/api/auth/verify', async (req, res) => {
     }
 });
 
+// --- Auth Endpoint for NextAuth (OAuth Check) ---
+app.get('/api/auth/check-user', async (req, res) => {
+    const email = req.query.email;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+
+    try {
+        const rows = await dbAll("SELECT id, email, name, role, subscription_status FROM users WHERE email = ?", [email]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'User not found in DB' });
+        }
+        return res.json(rows[0]);
+    } catch (err) {
+        console.error("Auth Check Error:", err);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // --- Admin: List Users ---
 app.get('/api/admin/users', async (req, res) => {
     try {
@@ -190,6 +207,20 @@ app.get('/api/admin/users', async (req, res) => {
         return res.json(rows || []);
     } catch (err) {
         console.error("Admin Users DB Error:", err);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// --- Admin: Upgrade User Subscription ---
+app.post('/api/admin/upgrade', async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+
+    try {
+        await dbRun("UPDATE users SET subscription_status = 'active' WHERE email = ?", [email]);
+        return res.json({ success: true, message: `Upgraded ${email}` });
+    } catch (err) {
+        console.error("Admin Upgrade DB Error:", err);
         return res.status(500).json({ error: 'Server error' });
     }
 });

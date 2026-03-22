@@ -484,7 +484,7 @@ export default function LandingPage() {
                   Free
                 </div>
                 <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '8px' }}>
-                  $0<span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
+                  $0 / R0<span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
                 </div>
                 <p style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)', marginBottom: '32px', lineHeight: 1.6 }}>
                   Explore the platform and paper trade.
@@ -542,7 +542,7 @@ export default function LandingPage() {
                   }}>Popular</span>
                 </div>
                 <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '8px' }}>
-                  $49<span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
+                  $49 <span style={{ fontSize: '1.25rem', color: 'var(--text-secondary)' }}>/ R890</span><span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
                 </div>
                 <p style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)', marginBottom: '32px', lineHeight: 1.6 }}>
                   Full access to live AI signals and MT5 execution.
@@ -593,8 +593,8 @@ export default function LandingPage() {
             fontSize: '1.0625rem', color: 'var(--text-secondary)', maxWidth: '500px',
             margin: '0 auto 40px', lineHeight: 1.7,
           }}>
-            Join the next generation of algorithmic traders leveraging
-            AI Mixture-of-Experts for institutional-grade signals.
+            Join the next generation of algorithmic traders in South Africa leveraging
+            AI Mixture-of-Experts for institutional-grade market signals.
           </p>
           <Link href="/login" style={{
             display: 'inline-flex', alignItems: 'center', gap: '10px',
