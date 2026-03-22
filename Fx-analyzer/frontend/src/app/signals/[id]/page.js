@@ -57,7 +57,7 @@ export default function SignalDetailsPage() {
             <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-cyan-900/20 to-transparent pointer-events-none" />
 
             <div className="max-w-4xl mx-auto relative z-10">
-                <Link href="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors">
+                <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors">
                     <ArrowLeft size={20} />
                     <span>Back to Dashboard</span>
                 </Link>

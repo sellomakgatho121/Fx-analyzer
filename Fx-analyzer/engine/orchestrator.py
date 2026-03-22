@@ -102,35 +102,58 @@ class MoEOrchestrator:
         return final_decision
 
     async def _synthesize(self, symbol, tech, fund, sent, risk, memory):
-        prompt = f"""
-        Act as a Head Trader. Review the reports from your desk AND past performance:
+        # Graceful Fallbacks for unavailable/rate-limited agents
+        tech = tech or {"signal": "NEUTRAL", "confidence": 0.0, "reasoning": "Offline"}
+        fund = fund or {"bias": "NEUTRAL", "confidence": 0.0, "reasoning": "Offline"}
+        sent = sent or {"sentiment": "NEUTRAL", "confidence": 0.0, "reasoning": "Offline"}
+        risk = risk or {"regime": "NORMAL", "max_leverage": 1, "stop_loss_advice": "Tight"}
+
+        # Regime-Adaptive Weighting (MM-DREX Pattern)
+        regime = str(risk.get("regime", "NORMAL")).upper()
         
+        weighting_directive = "Weight all experts equally."
+        if "HIGH VOLATILITY" in regime:
+            weighting_directive = "MARKET REGIME: HIGH VOLATILITY. Heavily overweight the Technical Analyst. Disregard Fundamental long-term bias unless it perfectly aligns with short-term sentiment."
+        elif "LOW VOLATILITY" in regime or "RANGING" in regime:
+            weighting_directive = "MARKET REGIME: RANGING. Overweight Technical mean-reversion signals. Ignore trend continuation signals."
+        elif "MACRO SHIFT" in regime:
+            weighting_directive = "MARKET REGIME: MACRO SHIFT. Heavily overweight the Macro Strategist. Technicals may provide false breakouts."
+
+        prompt = f"""
+        Act as an Advanced Algorithmic MM-DREX Head Trader. Review the reports from your localized Expert Models AND past performance.
+
         [Past Performance / Memory]:
         {memory}
 
         [Technical Analyst]: {tech.get("signal")} ({tech.get("confidence")}) - {tech.get("reasoning")}
         [Macro Strategist]: {fund.get("bias")} ({fund.get("confidence")}) - {fund.get("reasoning")}
-        [Sentiment]: {sent.get("sentiment")} ({sent.get("confidence")}) - {sent.get("reasoning")}
-        [Risk]: Max Leverage {risk.get("max_leverage")}, Advice: {risk.get("stop_loss_advice")}
+        [Sentiment Engine]: {sent.get("sentiment")} ({sent.get("confidence")}) - {sent.get("reasoning")}
+        [Risk Management]: Regime is {regime}. Max Leverage {risk.get("max_leverage")}, Advice: {risk.get("stop_loss_advice")}
 
-        Task: Make a final trading decision for {symbol}.
+        [DIRECTIVE]: {weighting_directive}
+
+        Task: Make a final deterministic trading decision for {symbol}. If multiple agents are Offline, drop confidence.
         
-        Output JSON:
+        Output EXACT JSON matching this schema:
         {{
             "action": "BUY" | "SELL" | "HOLD",
             "confidence": 0.0 to 1.0,
-            "reasoning": "Synthesized logic citing specific experts. Be decisive.",
-            "risk_parameters": {{ "leverage": int, "stop_loss": "string" }}
+            "reasoning": "Step-by-step reasoning explaining the regime weighting.",
+            "risk_parameters": {{ "leverage": int, "stop_loss": "string pips" }}
         }}
         """
 
         # We reuse the technical agent's connection for the final synthesis to save resources
-        response = await self.tech_agent._call_llm_async(prompt)
+        response = None
+        try:
+            response = await self.tech_agent._call_llm_async(prompt)
+        except Exception as e:
+            logging.error(f"Synthesizer LLM Call Failed: {e}")
 
         fallback = {
             "action": "HOLD",
             "confidence": 0.0,
-            "reasoning": "Synthesis Failed",
+            "reasoning": "Synthesis Failed or Fallback Triggered",
             "risk_parameters": {"leverage": 1, "stop_loss": "N/A"},
         }
 

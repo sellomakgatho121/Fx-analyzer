@@ -40,6 +40,27 @@ def init_db():
             )
         """)
 
+        # Users Table (SaaS Auth)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE,
+                password TEXT,
+                name TEXT,
+                role TEXT DEFAULT 'user',
+                subscription_status TEXT DEFAULT 'inactive',
+                created_at TEXT
+            )
+        """)
+        
+        # Insert Default Admin & User if empty
+        cursor.execute("SELECT COUNT(*) FROM users")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
+                              VALUES ('admin@fx.com', 'admin', 'System Admin', 'admin', 'active', ?)''', (datetime.now().isoformat(),))
+            cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
+                              VALUES ('user@fx.com', 'password', 'Free User', 'user', 'inactive', ?)''', (datetime.now().isoformat(),))
+
         conn.commit()
         logging.info("Database initialized successfully.")
         return conn

@@ -95,6 +95,21 @@ class AsyncEngineBridge:
                     # Return current config
                     response = {"status": "ok", "models": self.moe.models}
 
+                elif cmd == "EXECUTE_TRADE":
+                    sys_symbol = msg.get("symbol")
+                    sys_action = msg.get("action")
+                    sys_volume = msg.get("volume", 0.01)
+                    
+                    if sys_symbol and sys_action:
+                        logging.info(f"Executing MT5 trade: {sys_symbol} {sys_action}")
+                        exec_res = self.executor.execute_order(sys_symbol, sys_action, volume=sys_volume)
+                        if exec_res["status"] in ["filled", "mock_filled"]:
+                            response = {"status": "filled", "ticket": exec_res.get("ticket", 0)}
+                        else:
+                            response = {"status": "error", "message": exec_res.get("reason", "Execution Failed")}
+                    else:
+                        response = {"status": "error", "message": "Missing symbol or action"}
+
                 await self.cmd_socket.send_json(response)
 
             except Exception as e:

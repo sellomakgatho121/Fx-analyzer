@@ -35,30 +35,52 @@ const dbRun = (sql, params = []) => new Promise((resolve, reject) => {
 });
 
 // --- Helper Functions ---
-const symbols = ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCHF', 'USDCAD'];
 const basePrices = {
-    'EURUSD': 1.0865,
-    'GBPUSD': 1.2678,
-    'USDJPY': 155.42,
-    'AUDUSD': 0.6534,
-    'USDCHF': 0.8876,
-    'USDCAD': 1.3521,
+    // Major FX
+    'EURUSD': 1.0865, 'GBPUSD': 1.2678, 'USDJPY': 155.42,
+    'AUDUSD': 0.6534, 'USDCHF': 0.8876, 'USDCAD': 1.3521, 'NZDUSD': 0.5942,
+    // Cross FX (subset for ticker)
+    'EURGBP': 0.8570, 'EURJPY': 168.85, 'GBPJPY': 197.00,
+    // Commodities
+    'XAUUSD': 3045.50, 'XAGUSD': 33.85, 'XTIUSD': 68.72, 'XBRUSD': 72.15,
+    'XNGUSD': 3.92, 'XCUUSD': 4.28,
+    // Indices
+    'US30': 42850, 'US500': 5780, 'NAS100': 20150,
 };
+
+// Formatting helper for different asset types
+function getDecimals(symbol) {
+    if (['USDJPY', 'EURJPY', 'GBPJPY', 'AUDJPY', 'CADJPY', 'CHFJPY', 'NZDJPY'].includes(symbol)) return 2;
+    if (['XAUUSD', 'XPTUSD', 'XPDUSD', 'XTIUSD', 'XBRUSD'].includes(symbol)) return 2;
+    if (['XAGUSD', 'XNGUSD', 'XCUUSD'].includes(symbol)) return 3;
+    if (['US30', 'US500', 'NAS100', 'UK100', 'GER40', 'JPN225'].includes(symbol)) return 0;
+    return 5;
+}
+
+function formatSymbolDisplay(symbol) {
+    // Indices don't need splitting
+    if (['US30', 'US500', 'NAS100', 'UK100', 'GER40', 'JPN225'].includes(symbol)) return symbol;
+    if (symbol.length === 6) return symbol.slice(0, 3) + '/' + symbol.slice(3);
+    return symbol;
+}
 
 function generateTickerData() {
     return Object.entries(basePrices).map(([symbol, basePrice]) => {
-        const change = (Math.random() - 0.5) * 0.002;
+        const volatility = basePrice > 1000 ? 0.001 : 0.002;
+        const change = (Math.random() - 0.5) * volatility * basePrice;
         const newPrice = basePrice + change;
         const changePercent = ((change / basePrice) * 100).toFixed(2);
+        const decimals = getDecimals(symbol);
 
         return {
-            symbol: symbol.slice(0, 3) + '/' + symbol.slice(3),
-            price: newPrice.toFixed(symbol === 'USDJPY' ? 2 : 5),
+            symbol: formatSymbolDisplay(symbol),
+            price: newPrice.toFixed(decimals),
             change: `${parseFloat(changePercent) >= 0 ? '+' : ''}${changePercent}%`,
             positive: parseFloat(changePercent) >= 0,
         };
     });
 }
+
 
 // --- ZeroMQ Subscriber (Python Bridge) ---
 async function startZMQ() {
@@ -79,9 +101,9 @@ async function startZMQ() {
 
                 if (topicStr === 'signal') {
                     // Signal is already stored in DB by Python
-                    // Just emit to frontend for live updates
-                    io.emit('fx-signal', data);
-                    console.log(`📊 [PY-SIGNAL] ${data.symbol} ${data.action} @ ${data.price}`);
+                    // Only emit to premium subscribers
+                    io.to('premium').emit('fx-signal', data);
+                    console.log(`📊 [PY-SIGNAL] ${data.symbol} ${data.action} @ ${data.price} -> PREMIUM`);
                 } else if (topicStr === 'ticker') {
                     if (basePrices[data.symbol.replace('/', '')]) {
                         basePrices[data.symbol.replace('/', '')] = data.price;
@@ -98,9 +120,67 @@ async function startZMQ() {
 
 startZMQ();
 
+// --- Auth API Endpoint for NextAuth ---
+app.post('/api/auth/verify', async (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Missing credentials' });
+    }
+
+    try {
+        const rows = await dbAll(
+            "SELECT id, email, name, role, subscription_status FROM users WHERE email = ? AND password = ?",
+            [username, password]
+        );
+
+        if (rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const user = rows[0];
+        return res.json({
+            id: user.id.toString(),
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            subscription: user.subscription_status,
+        });
+    } catch (err) {
+        console.error("Auth DB Error:", err);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// --- Admin: List Users ---
+app.get('/api/admin/users', async (req, res) => {
+    try {
+        const rows = await dbAll("SELECT id, email, name, role, subscription_status, created_at FROM users");
+        return res.json(rows || []);
+    } catch (err) {
+        console.error("Admin Users DB Error:", err);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // --- WebSocket Connection Handling ---
+io.use((socket, next) => {
+    const auth = socket.handshake.auth;
+    if (!auth || !auth.token) {
+        return next(new Error("Authentication error: Missing token"));
+    }
+    socket.user = auth;
+    next();
+});
+
 io.on('connection', async (socket) => {
-    console.log('✅ Client connected:', socket.id);
+    console.log('✅ Client connected:', socket.id, 'User:', socket.user.token);
+
+    if (socket.user.subscription === 'active') {
+        socket.join('premium');
+        console.log(`User ${socket.user.token} joined PREMIUM room`);
+    } else {
+        socket.emit('notification', { type: 'warning', title: 'Free Tier', message: 'You are on the free tier. Live signals are blocked. Upgrade to execute trades.' });
+    }
 
     // Send initial data
     socket.emit('ticker-update', generateTickerData());
@@ -176,26 +256,31 @@ io.on('connection', async (socket) => {
             return;
         }
 
-        // Simulate execution delay
-        setTimeout(async () => {
-            // Simulated P/L for the trade (Random win/loss for history tracking)
-            const isWin = Math.random() > 0.4; // 60% win rate
-            const tradePL = isWin ? (Math.random() * 50 + 10) : -(Math.random() * 30 + 10);
-            const timestamp = new Date().toISOString();
+        // Execute via Python Engine
+        try {
+            const cleanSymbol = tradeData.symbol.replace('/', '');
+            console.log(`Sending execution to engine: ${cleanSymbol} ${tradeData.action}`);
+            
+            const result = await sendCommand({
+                cmd: 'EXECUTE_TRADE',
+                symbol: cleanSymbol,
+                action: tradeData.action,
+                volume: tradeData.volume || 0.01
+            });
 
-            const executedTrade = {
-                ...tradeData,
-                executedAt: timestamp,
-                status: 'closed', // Auto-close for simulation
-                executionPrice: tradeData.price,
-                pl: parseFloat(tradePL.toFixed(2)),
-                plType: isWin ? 'profit' : 'loss'
-            };
+            if (result.status === 'filled') {
+                const timestamp = new Date().toISOString();
+                const executedTrade = {
+                    ...tradeData,
+                    executedAt: timestamp,
+                    status: 'open', // Real positions are open
+                    executionPrice: tradeData.price, // Using requested price for logging since MT5 doesn't return exact fill price synchronously in basic executor
+                    pl: 0,
+                    plType: 'neutral',
+                    ticket: result.ticket
+                };
 
-            // Store in DB
-            try {
-                // Table: trades (timestamp, symbol, action, entry_price, status) + need to add PL column in DB schema?
-                // database.py schema: pl REAL exists.
+                // Store in DB
                 await dbRun(`
                    INSERT INTO trades (timestamp, symbol, action, entry_price, pl, status)
                    VALUES (?, ?, ?, ?, ?, ?)
@@ -204,21 +289,24 @@ io.on('connection', async (socket) => {
                     executedTrade.symbol,
                     executedTrade.action,
                     executedTrade.price,
-                    executedTrade.pl,
-                    executedTrade.status
+                    0,
+                    'open'
                 ]);
 
                 socket.emit('trade-executed', executedTrade);
-                console.log('✅ Trade executed & stored:', executedTrade);
+                console.log('✅ Real Trade executed & stored:', executedTrade);
 
                 // Emit updated stats
                 io.emit('risk-stats-update', await getDailyStats());
 
-            } catch (e) {
-                console.error("DB Insert Error:", e);
-                socket.emit('trade-rejected', { reason: 'Database error during execution.' });
+            } else {
+                console.error("Execution Rejected by Engine:", result.message);
+                socket.emit('trade-rejected', { reason: result.message || 'Engine rejected trade.' });
             }
-        }, 500);
+        } catch (e) {
+            console.error("Execution Communication Error:", e);
+            socket.emit('trade-rejected', { reason: 'Error communicating with Python execution engine.' });
+        }
     });
 
     // Handle Risk Settings Updates from Frontend

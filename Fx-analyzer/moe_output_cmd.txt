@@ -1,0 +1,11 @@
+--- Starting MoE Integration Test ---
+[-] WARNING: GEMINI_API_KEY not set. Agents will fail/mock.
+[+] Orchestrator Initialized
+[*] Generating Mock Market Data...
+[*] requesting consensus...
+
+==============================
+FINAL TRADING DECISION
+==============================
+{'action': 'HOLD', 'confidence': 0.0, 'reasoning': 'Synthesis Failed', 'risk_parameters': {'leverage': 1, 'stop_loss': 'N/A'}, 'agent_breakdown': {'technical': {'signal': 'NEUTRAL', 'confidence': 0.0, 'reasoning': 'LLM Failed'}, 'fundamental': {'bias': 'NEUTRAL', 'confidence': 0.0, 'reasoning': 'LLM Failed'}, 'sentiment': {'sentiment': 'NEUTRAL', 'confidence': 0.0, 'reasoning': 'LLM Failed'}, 'risk': {'regime': 'NORMAL', 'max_leverage': 30, 'stop_loss_advice': 'Standard'}, 'memory': 'No past trade history for this symbol.'}}
+==============================

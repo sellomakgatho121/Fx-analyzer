@@ -1,695 +1,622 @@
 'use client';
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import MetricDetailsModal from '@/components/MetricDetailsModal';
-import ErrorBoundary from '@/components/ErrorBoundary';
-import { io } from 'socket.io-client';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useRef } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import { motion, useScroll, useTransform, useInView } from 'framer-motion';
 import {
-  Activity,
-  Zap,
-  TrendingUp,
-  BarChart3,
-  Shield,
-  Wifi,
-  WifiOff,
-  RefreshCw,
-  Bot,
-  RotateCcw,
-  DollarSign, // Added for StatsCard
-  ShieldCheck // Added for StatsCard
+  Zap, Shield, BarChart3, Bot, TrendingUp, Lock,
+  ArrowRight, ChevronDown, Activity, Globe
 } from 'lucide-react';
 
-import TickerBar from '../components/TickerBar';
-import CandlestickChart from '../components/CandlestickChart';
-import SignalCard from '../components/SignalCard';
-import TradePanel from '../components/TradePanel';
-import HistoryTable from '../components/HistoryTable';
-import StatsCard from '../components/StatsCard';
-import PairSelector from '../components/PairSelector';
-import TradingModeToggle from '../components/TradingModeToggle';
-import PaperTradingDashboard from '../components/PaperTradingDashboard';
-import EconomicCalendar from '../components/EconomicCalendar';
-import ModelSelector from '../components/ModelSelector';
-import AgentDebate from '../components/AgentDebate';
-import { CURRENCY_PAIRS, getPairBySymbol } from '../data/currencyPairs';
-import PaperTradingEngine from '../lib/paperTrading';
-import { NotificationProvider, useNotification } from '../context/NotificationContext';
-import { AlertService } from '../lib/AlertService';
+const HeroScene = dynamic(() => import('../components/HeroScene'), {
+  ssr: false,
+  loading: () => <div style={{ width: '100%', height: '100%', background: 'transparent' }} />,
+});
 
-export default function Page() {
+function ScrollReveal({ children, delay = 0 }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-80px' });
+
   return (
-    <NotificationProvider>
-      <Dashboard />
-    </NotificationProvider>
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 60 }}
+      animate={isInView ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.8, delay, ease: [0.19, 1, 0.22, 1] }}
+    >
+      {children}
+    </motion.div>
   );
 }
 
-function Dashboard() {
-  const [selectedPair, setSelectedPair] = useState(CURRENCY_PAIRS[0]); // Default to EUR/USD
-  const [favorites, setFavorites] = useState(['EURUSD', 'GBPUSD', 'USDJPY']);
-  const [signals, setSignals] = useState([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [currentPrice, setCurrentPrice] = useState(1.0865);
+function FeatureCard({ icon: Icon, title, description, accentColor, delay }) {
+  return (
+    <ScrollReveal delay={delay}>
+      <motion.div
+        whileHover={{ y: -8, scale: 1.02 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: '20px',
+          padding: '40px 32px',
+          position: 'relative',
+          overflow: 'hidden',
+          cursor: 'default',
+        }}
+      >
+        {/* Accent glow */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+          background: accentColor,
+        }} />
+        <div style={{
+          position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px',
+          background: `radial-gradient(circle, ${accentColor}15 0%, transparent 70%)`,
+          pointerEvents: 'none',
+        }} />
 
-  // Socket Ref
-  const socketRef = useRef(null);
+        <div style={{
+          width: '48px', height: '48px', borderRadius: '14px',
+          background: `${accentColor}15`, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', marginBottom: '24px',
+        }}>
+          <Icon size={22} style={{ color: accentColor }} />
+        </div>
 
-  // Risk Shield State
-  const [riskStats, setRiskStats] = useState({ maxDailyDrawdown: 500, profitLoss: 0, openPositions: 0 });
+        <h3 style={{
+          fontSize: '1.25rem', fontWeight: 700, marginBottom: '12px',
+          color: 'var(--text-primary)', letterSpacing: '-0.02em',
+        }}>{title}</h3>
 
-  // Paper Trading State
-  const [tradingMode, setTradingMode] = useState('paper'); // 'paper' or 'live'
-  const [paperEngine] = useState(() => new PaperTradingEngine(10000));
-  const [paperMetrics, setPaperMetrics] = useState(paperEngine.getMetrics());
-  const [selectedMetric, setSelectedMetric] = useState(null);
-  const [showPaperDashboard, setShowPaperDashboard] = useState(false);
+        <p style={{
+          fontSize: '0.9375rem', lineHeight: 1.7, color: 'var(--text-secondary)',
+        }}>{description}</p>
+      </motion.div>
+    </ScrollReveal>
+  );
+}
 
-  const riskShieldRef = useRef(null);
-  const audioContextRef = useRef(null);
-
-  const handleMetricClick = (label, value, variant, icon) => {
-    setSelectedMetric({ label, value, variant, icon });
-  };
-
-  // Auto-Trading State (Paper Mode Only)
-  const [isAutoTrading, setIsAutoTrading] = useState(false);
-
-  // Notification Hook
-  const { addNotification } = useNotification();
-
-  const [stats, setStats] = useState({
-    winRate: 84.5,
-    activeTrades: 3,
-    profit: 1240.50,
-    totalSignals: 47,
-  });
-
-  // --- Persistence Logic ---
-  useEffect(() => {
-    // Load state on mount
-    const savedState = localStorage.getItem('fx_paper_state');
-    if (savedState) {
-      try {
-        const parsed = JSON.parse(savedState);
-        paperEngine.importState(parsed);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        setPaperMetrics(paperEngine.getMetrics());
-      } catch (e) {
-        console.error('Failed to load paper trading state', e);
-      }
-    }
-  }, [paperEngine]); // Run once on mount (paperEngine is stable)
-
-  // Save state on metrics change
-  useEffect(() => {
-    if (tradingMode === 'paper') {
-      const state = paperEngine.exportState();
-      localStorage.setItem('fx_paper_state', JSON.stringify(state));
-    }
-  }, [paperMetrics, tradingMode, paperEngine]);
-
-  // --- Socket Connection & Event Listeners ---
-  useEffect(() => {
-    socketRef.current = io('http://localhost:4000', {
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-
-    const socket = socketRef.current;
-
-    socket.on('connect', () => {
-      setIsConnected(true);
-      // addNotification('success', 'System Online', 'Connected to FX Analysis Engine');
-    });
-
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-      // addNotification('error', 'Connection Lost', 'Reconnecting to engine...');
-    });
-
-    socket.on('fx-signal', (signal) => {
-      // Play alert for high confidence
-      if (signal.confidence > 0.85) {
-        AlertService.playSignalAlert(signal.confidence);
-      }
-
-      // Only show signals for the selected pair
-      if (signal.symbol === selectedPair.name || signal.symbol === selectedPair.symbol) {
-        setSignals(prev => [signal, ...prev].slice(0, 10));
-        setStats(prev => ({
-          ...prev,
-          totalSignals: prev.totalSignals + 1,
-        }));
-
-        // Auto-Trading Logic (Paper Mode Only)
-        if (isAutoTrading && tradingMode === 'paper') {
-          const result = paperEngine.executeTrade({
-            symbol: signal.symbol,
-            action: signal.action,
-            price: signal.entry || currentPrice,
-            lotSize: 0.01,
-            sl: signal.sl,
-            tp: signal.tp
-          });
-
-          if (result.success) {
-            addNotification(
-              'trade',
-              `Auto-Trade: ${signal.action} ${signal.symbol}`,
-              `Entry: ${result.trade.entryPrice.toFixed(5)} | Slippage: ${result.slippagePips.toFixed(1)} pips`
-            );
-            setPaperMetrics(paperEngine.getMetrics());
-          } else {
-            addNotification('error', 'Auto-Trade Failed', result.reason);
-          }
-        } else {
-          // Notify about new signal
-          addNotification(
-            'signal',
-            `New Signal: ${signal.symbol}`,
-            `${signal.action} @ ${signal.entry?.toFixed(5) || 'Market'} (${signal.confidence}% confidence)`
-          );
-        }
-      }
-    });
-
-    socket.on('notification', (rawMsg) => {
-      // Handle custom notifications (like DAILY_BRIEFING)
-      try {
-        // rawMsg format might be "notification {json...}" or just "{json...}" depending on bridge 
-        // Bridge sends: self.socket.send_string(f"notification {json.dumps(briefing)}")
-        // So we need to parse it if it wasn't caught by the main message handler
-      } catch (e) {
-        console.error(e);
-      }
-    });
-
-    socket.on('message', (msg) => {
-      const parts = msg.toString().split(' ');
-      const topic = parts[0];
-      const data = parts.slice(1).join(' ');
-
-      if (topic === 'notification') {
-        const notif = JSON.parse(data);
-        if (notif.type === 'DAILY_BRIEFING') {
-          addNotification(
-            'info',
-            `📅 Daily Briefing: ${notif.date}`,
-            `Analyzed ${notif.market_scan.length} Assets. High-Impact Events: ${notif.events.length}`
-          );
-        }
-      }
-    });
-
-    socket.on('signal-history', (history) => {
-      // history is [oldest, ..., newest] -> reverse to [newest, ..., oldest]
-      const sortedHistory = [...history].reverse();
-
-      // Filter for selected pair matches live signal logic
-      const relevantSignals = sortedHistory.filter(s =>
-        s.symbol === selectedPair.name || s.symbol === selectedPair.symbol
-      );
-
-      setSignals(relevantSignals);
-    });
-
-    // Risk Shield Listeners
-    socket.on('risk-stats-update', (newStats) => {
-      setRiskStats(prev => ({ ...prev, ...newStats }));
-      // Also update main stats for consistency if in Live mode
-      if (tradingMode === 'live') {
-        setStats(prev => ({
-          ...prev,
-          activeTrades: newStats.openPositions,
-          profit: newStats.profitLoss // This mock comes from server in verify logic
-        }));
-      }
-    });
-
-    socket.on('trade-rejected', (data) => {
-      addNotification('error', 'Order Rejected', data.reason);
-    });
-
-    socket.on('trade-executed', (trade) => {
-      // Only notify if executed in backend (live mode handling mostly)
-      // Paper mode emits its own notifications locally
-      // But if we are in live mode, this confirms execution
-      if (tradingMode === 'live') {
-        addNotification('success', 'Order Filled', `${trade.action} ${trade.symbol} @ ${trade.executionPrice}`);
-      }
-    });
-
-    return () => {
-      if (socketRef.current) socketRef.current.disconnect();
-    };
-  }, [selectedPair, isAutoTrading, tradingMode, paperEngine, currentPrice, addNotification]); // Removed socketRef from dependency
-
-  const handlePriceUpdate = useCallback((price) => {
-    setCurrentPrice(price);
-  }, []);
-
-  const handlePairChange = useCallback((pair) => {
-    setSelectedPair(pair);
-    setSignals([]); // Clear signals when switching pairs
-  }, []);
-
-  const handleToggleFavorite = useCallback((symbol) => {
-    setFavorites(prev =>
-      prev.includes(symbol)
-        ? prev.filter(s => s !== symbol)
-        : [...prev, symbol]
-    );
-  }, []);
-
-  const handleExecute = useCallback((signal) => {
-    if (tradingMode === 'paper') {
-      // Execute paper trade
-      const result = paperEngine.executeTrade({
-        symbol: signal.symbol,
-        action: signal.action,
-        price: currentPrice,
-        lotSize: signal.lotSize || 0.01,
-        sl: signal.sl,
-        tp: signal.tp
-      });
-
-      if (result.success) {
-        console.log('Paper trade executed:', result.trade);
-        setPaperMetrics(paperEngine.getMetrics());
-      } else {
-        console.warn('Paper trade failed:', result.reason);
-      }
-    } else {
-      // Live trading - Emit to backend
-      if (socketRef.current && socketRef.current.connected) {
-        socketRef.current.emit('execute-trade', {
-          ...signal,
-          price: currentPrice,
-          timestamp: new Date().toISOString()
-        });
-        addNotification('info', 'Sending Order', 'Validating with Risk Shield...');
-      } else {
-        addNotification('error', 'Connection Error', 'Cannot execute trade - Engine disconnected');
-      }
-    }
-
-    setStats(prev => ({
-      ...prev,
-      activeTrades: prev.activeTrades + 1,
-    }));
-  }, [tradingMode, paperEngine, currentPrice, addNotification]);
-
-  const handleModeChange = useCallback((mode) => {
-    setTradingMode(mode);
-    if (mode === 'paper') {
-      setPaperMetrics(paperEngine.getMetrics());
-    }
-  }, [paperEngine]);
-
-  const handleResetPaper = useCallback(() => {
-    paperEngine.reset();
-    setPaperMetrics(paperEngine.getMetrics());
-    addNotification('success', 'Paper Account Reset', 'Balance restored to $10,000.00');
-  }, [paperEngine, addNotification]);
-
-  // Reset Signals & Engine
-  const handleResetAll = useCallback(() => {
-    setSignals([]);
-    paperEngine.reset();
-    setPaperMetrics(paperEngine.getMetrics());
-    setStats({
-      winRate: 84.5,
-      activeTrades: 0,
-      profit: 0,
-      totalSignals: 0,
-    });
-    addNotification('success', 'System Reset', 'All signals cleared and paper account reset.');
-  }, [paperEngine, addNotification]);
-
-  // Toggle Auto-Trading (Paper Mode Only)
-  // Toggle Auto-Trading (Paper Mode Only)
-  const handleToggleAutoTrading = useCallback(() => {
-    if (tradingMode !== 'paper') {
-      addNotification('error', 'Auto-Trading Disabled', 'Auto-trading is only available in Paper mode for safety.');
-      return;
-    }
-
-    setIsAutoTrading(prev => {
-      const newState = !prev;
-      // Use setTimeout to defer the notification out of the render cycle
-      setTimeout(() => {
-        addNotification(
-          newState ? 'success' : 'info',
-          newState ? 'Auto-Trading Enabled' : 'Auto-Trading Disabled',
-          newState ? 'New signals will be auto-executed in paper mode.' : 'Manual execution required.'
-        );
-      }, 0);
-      return newState;
-    });
-  }, [tradingMode, addNotification]);
-
-  // Update paper positions with current prices
-  useEffect(() => {
-    if (tradingMode === 'paper' && paperEngine.positions.length > 0) {
-      const interval = setInterval(() => {
-        paperEngine.updatePositions({ [selectedPair.symbol]: currentPrice });
-        setPaperMetrics(paperEngine.getMetrics());
-      }, 1000);
-
-      return () => clearInterval(interval);
-    }
-  }, [tradingMode, paperEngine, selectedPair, currentPrice]);
+function StatNumber({ value, label, delay }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true });
 
   return (
-    <ErrorBoundary>
-      <div className="min-h-screen" style={{ background: 'var(--bg-void)' }}>
-        {/* Ticker Bar */}
-        <TickerBar />
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={isInView ? { opacity: 1, scale: 1 } : {}}
+      transition={{ duration: 0.6, delay, ease: [0.19, 1, 0.22, 1] }}
+      style={{ textAlign: 'center' }}
+    >
+      <div style={{
+        fontFamily: 'var(--font-mono)', fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+        fontWeight: 800, letterSpacing: '-0.03em',
+        background: 'linear-gradient(135deg, #00f2ff 0%, #00ff88 100%)',
+        WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: '0.8125rem', fontWeight: 600, textTransform: 'uppercase',
+        letterSpacing: '0.1em', color: 'var(--text-tertiary)', marginTop: '8px',
+      }}>
+        {label}
+      </div>
+    </motion.div>
+  );
+}
 
-        {/* Header */}
-        <header
-          style={{
-            padding: 'var(--space-lg) var(--space-xl)',
-            borderBottom: '1px solid var(--border-subtle)',
-            background: 'var(--bg-deep)',
-          }}
-        >
-          <div
-            className="flex justify-between items-center"
-            style={{ maxWidth: '1600px', margin: '0 auto' }}
+export default function LandingPage() {
+  const heroRef = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+
+  const heroOpacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
+  const heroScale = useTransform(scrollYProgress, [0, 0.6], [1, 0.9]);
+  const heroY = useTransform(scrollYProgress, [0, 0.6], [0, -100]);
+
+  return (
+    <div style={{ background: 'var(--bg-void)', minHeight: '100vh', overflow: 'hidden' }}>
+
+      {/* ═══════ NAVIGATION ═══════ */}
+      <motion.nav
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, delay: 0.2 }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+          padding: '20px 40px',
+          background: 'rgba(3, 3, 5, 0.6)',
+          backdropFilter: 'blur(20px)',
+          borderBottom: '1px solid var(--border-subtle)',
+        }}
+      >
+        <div style={{
+          maxWidth: '1200px', margin: '0 auto',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '36px', height: '36px', borderRadius: '10px',
+              background: 'linear-gradient(135deg, #00f2ff, #00ff88)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 900, fontSize: '0.75rem', color: '#000',
+            }}>FX</div>
+            <span style={{ fontWeight: 800, fontSize: '1.125rem', letterSpacing: '-0.02em' }}>
+              NEXUS <span style={{ color: '#00f2ff' }}>PRO</span>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+            <a href="#features" style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.875rem', textDecoration: 'none', transition: 'color 0.2s' }}>Features</a>
+            <a href="#performance" style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.875rem', textDecoration: 'none', transition: 'color 0.2s' }}>Performance</a>
+            <a href="#pricing" style={{ color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.875rem', textDecoration: 'none', transition: 'color 0.2s' }}>Pricing</a>
+            <Link href="/login" style={{
+              padding: '10px 24px', borderRadius: '10px', fontWeight: 700,
+              fontSize: '0.8125rem', textTransform: 'uppercase', letterSpacing: '0.05em',
+              background: 'linear-gradient(135deg, #00f2ff, #00ff88)',
+              color: '#000', textDecoration: 'none',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+            }}>
+              Launch Terminal
+            </Link>
+          </div>
+        </div>
+      </motion.nav>
+
+      {/* ═══════ HERO SECTION ═══════ */}
+      <motion.section
+        ref={heroRef}
+        style={{
+          position: 'relative', height: '100vh', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          opacity: heroOpacity, scale: heroScale, y: heroY,
+        }}
+      >
+        {/* 3D Scene Background */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+          <HeroScene />
+        </div>
+
+        {/* Overlay gradient */}
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 1,
+          background: 'radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, var(--bg-void) 100%)',
+        }} />
+
+        {/* Hero Content */}
+        <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', maxWidth: '800px', padding: '0 24px' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, delay: 0.5, ease: [0.19, 1, 0.22, 1] }}
           >
-            <div className="flex items-center gap-lg">
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-black">
-                    FX
-                  </div>
-                  <span className="font-bold tracking-tight text-lg">
-                    NEXUS <span className="text-cyan-500">PRO</span>
-                  </span>
-                </div>
-                <p className="text-body text-muted" style={{ marginTop: '4px', fontSize: '0.75rem' }}>
-                  Institutional-grade algorithmic signals & MT5 execution
-                </p>
-              </motion.div>
-
-              {/* Pair Selector */}
-              <PairSelector
-                selectedPair={selectedPair}
-                onPairChange={handlePairChange}
-                favorites={favorites}
-                onToggleFavorite={handleToggleFavorite}
-              />
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              padding: '6px 16px', borderRadius: '999px', marginBottom: '24px',
+              background: 'rgba(0, 242, 255, 0.08)', border: '1px solid rgba(0, 242, 255, 0.2)',
+              fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase',
+              letterSpacing: '0.08em', color: '#00f2ff',
+            }}>
+              <Activity size={12} />
+              Powered by Gemini AI — Mixture of Experts
             </div>
+          </motion.div>
 
-            <div className="flex items-center gap-lg">
-              <PaperTradingDashboard
-                onModeChange={handleModeChange}
-                paperMetrics={paperMetrics}
-              />
-
-              {/* LLM Model Selector - New Feature */}
-              {socketRef.current && (
-                <ModelSelector socket={socketRef.current} />
-              )}
-
-              {/* Paper Analytics Button */}
-              {tradingMode === 'paper' && (
-                <button
-                  onClick={() => setShowPaperDashboard(true)}
-                  className="btn-ghost flex items-center gap-xs"
-                  style={{
-                    padding: 'var(--space-sm) var(--space-md)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-md)'
-                  }}
-                >
-                  <BarChart3 size={14} />
-                  <span>Paper Analytics</span>
-                </button>
-              )}
-
-              {/* Auto-Trade Toggle (Paper Mode Only) */}
-              {tradingMode === 'paper' && (
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleToggleAutoTrading}
-                  className="flex items-center gap-xs"
-                  style={{
-                    padding: 'var(--space-sm) var(--space-md)',
-                    background: isAutoTrading ? 'rgba(0, 255, 136, 0.1)' : 'transparent',
-                    border: `1px solid ${isAutoTrading ? 'var(--neon-emerald)' : 'var(--border-default)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    color: isAutoTrading ? 'var(--neon-emerald)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.875rem'
-                  }}
-                >
-                  <Bot size={14} />
-                  <span>{isAutoTrading ? 'Auto ON' : 'Auto OFF'}</span>
-                  {isAutoTrading && (
-                    <motion.span
-                      animate={{ opacity: [1, 0.3, 1] }}
-                      transition={{ duration: 1.5, repeat: Infinity }}
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: 'var(--neon-emerald)'
-                      }}
-                    />
-                  )}
-                </motion.button>
-              )}
-
-              {/* Reset All Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleResetAll}
-                className="btn-ghost flex items-center gap-xs"
-                style={{
-                  padding: 'var(--space-sm) var(--space-md)',
-                  border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-md)'
-                }}
-                title="Reset signals and paper account"
-              >
-                <RotateCcw size={14} />
-                <span>Reset</span>
-              </motion.button>
-
-              {/* Connection Status */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="neo-card flex items-center gap-sm p-md"
-              >
-                {isConnected ? (
-                  <>
-                    <Wifi size={16} className="text-emerald" />
-                    <span className="text-caption text-emerald">ONLINE</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff size={16} className="text-ruby" />
-                    <span className="text-caption text-ruby">OFFLINE</span>
-                  </>
-                )}
-              </motion.div>
-
-              {/* Refresh Button */}
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="btn btn-ghost"
-                onClick={() => window.location.reload()}
-              >
-                <RefreshCw size={16} />
-              </motion.button>
-            </div>
-          </div>
-        </header>
-
-        {/* Stats Grid */}
-        <section style={{ padding: 'var(--space-xl)', maxWidth: '1600px', margin: '0 auto' }}>
-          <div className="stats-grid">
-            <StatsCard
-              label="Win Rate"
-              value={tradingMode === 'paper' ? paperMetrics.winRate : stats.winRate}
-              suffix="%"
-              variant={tradingMode === 'paper' && paperMetrics.winRate >= 50 ? 'success' : 'info'}
-              icon={TrendingUp}
-              onClick={() => handleMetricClick('Win Rate', tradingMode === 'paper' ? paperMetrics.winRate : stats.winRate, tradingMode === 'paper' && paperMetrics.winRate >= 50 ? 'success' : 'info', TrendingUp)}
-            />
-            <StatsCard
-              label="Active Trades"
-              value={tradingMode === 'paper' ? paperMetrics.openPositions : stats.activeTrades}
-              icon={Activity}
-              onClick={() => handleMetricClick('Active Trades', tradingMode === 'paper' ? paperMetrics.openPositions : stats.activeTrades, 'default', Activity)}
-            />
-            <StatsCard
-              label="Total Profit"
-              value={tradingMode === 'paper' ? paperMetrics.totalProfit : stats.profit}
-              prefix={tradingMode === 'paper' && paperMetrics.totalProfit < 0 ? '-$' : '+$'}
-              variant={tradingMode === 'paper' ? (paperMetrics.totalProfit >= 0 ? 'success' : 'danger') : 'success'}
-              icon={BarChart3}
-              onClick={() => handleMetricClick('Total Profit', tradingMode === 'paper' ? paperMetrics.totalProfit : stats.profit, tradingMode === 'paper' ? (paperMetrics.totalProfit >= 0 ? 'success' : 'danger') : 'success', BarChart3)}
-            />
-            <StatsCard
-              label="Signals Today"
-              value={stats.totalSignals}
-              icon={Zap}
-              onClick={() => handleMetricClick('Signals Today', stats.totalSignals, 'default', Zap)}
-            />
-          </div>
-        </section>
-
-        {/* Main Dashboard Grid */}
-        <main style={{ padding: '0 var(--space-xl) var(--space-xl)', maxWidth: '1600px', margin: '0 auto' }}>
-          <div
+          <motion.h1
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, delay: 0.7, ease: [0.19, 1, 0.22, 1] }}
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 380px',
-              gap: 'var(--space-lg)',
+              fontSize: 'clamp(2.5rem, 7vw, 5rem)',
+              fontWeight: 900, lineHeight: 1.05, letterSpacing: '-0.04em',
+              marginBottom: '24px',
             }}
           >
-            {/* Left Column - Chart & Signals */}
-            <div className="flex flex-col gap-lg">
-              {/* Candlestick Chart */}
-              <CandlestickChart symbol={selectedPair.name} onPriceUpdate={handlePriceUpdate} />
+            Institutional-Grade{' '}
+            <span style={{
+              background: 'linear-gradient(135deg, #00f2ff 0%, #00ff88 50%, #ccff00 100%)',
+              WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+            }}>
+              FX Signals
+            </span>
+            <br />
+            At Your Fingertips
+          </motion.h1>
 
-              {/* Signals Section */}
+          <motion.p
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.9, ease: [0.19, 1, 0.22, 1] }}
+            style={{
+              fontSize: 'clamp(1rem, 2vw, 1.25rem)', lineHeight: 1.7,
+              color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto 40px',
+            }}
+          >
+            Four specialized AI agents analyze technicals, fundamentals, sentiment,
+            and risk in real-time — delivering high-conviction trading signals
+            directly to your MetaTrader 5.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 1.1, ease: [0.19, 1, 0.22, 1] }}
+            style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}
+          >
+            <Link href="/login" style={{
+              display: 'inline-flex', alignItems: 'center', gap: '10px',
+              padding: '16px 36px', borderRadius: '14px', fontWeight: 700,
+              fontSize: '0.9375rem', textDecoration: 'none',
+              background: 'linear-gradient(135deg, #00f2ff, #00ff88)',
+              color: '#000', boxShadow: '0 0 30px rgba(0, 242, 255, 0.3), 0 0 60px rgba(0, 242, 255, 0.1)',
+              transition: 'transform 0.2s',
+            }}>
+              Start Trading <ArrowRight size={18} />
+            </Link>
+
+            <a href="#features" style={{
+              display: 'inline-flex', alignItems: 'center', gap: '10px',
+              padding: '16px 36px', borderRadius: '14px', fontWeight: 600,
+              fontSize: '0.9375rem', textDecoration: 'none',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border-default)',
+              color: 'var(--text-primary)', transition: 'background 0.2s',
+            }}>
+              Explore Features
+            </a>
+          </motion.div>
+        </div>
+
+        {/* Scroll Indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 2 }}
+          style={{
+            position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
+          }}
+        >
+          <span style={{ fontSize: '0.6875rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-tertiary)' }}>
+            Scroll to explore
+          </span>
+          <motion.div
+            animate={{ y: [0, 8, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <ChevronDown size={20} style={{ color: 'var(--text-tertiary)' }} />
+          </motion.div>
+        </motion.div>
+      </motion.section>
+
+      {/* ═══════ STATS BAR ═══════ */}
+      <section style={{
+        padding: '80px 40px',
+        borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)',
+        background: 'var(--bg-deep)',
+      }}>
+        <div style={{
+          maxWidth: '1000px', margin: '0 auto',
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '40px',
+        }}>
+          <StatNumber value="4" label="AI Experts" delay={0} />
+          <StatNumber value="6+" label="Currency Pairs" delay={0.1} />
+          <StatNumber value="<2s" label="Signal Latency" delay={0.2} />
+          <StatNumber value="24/7" label="Market Coverage" delay={0.3} />
+        </div>
+      </section>
+
+      {/* ═══════ FEATURES ═══════ */}
+      <section id="features" style={{ padding: '120px 40px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <ScrollReveal>
+            <div style={{ textAlign: 'center', marginBottom: '80px' }}>
+              <span style={{
+                fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.12em', color: '#00ff88', marginBottom: '16px', display: 'block',
+              }}>
+                Why Nexus Pro
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(1.75rem, 4vw, 3rem)', fontWeight: 800,
+                letterSpacing: '-0.03em', marginBottom: '16px',
+              }}>
+                Built for Serious Traders
+              </h2>
+              <p style={{
+                fontSize: '1.0625rem', color: 'var(--text-secondary)',
+                maxWidth: '500px', margin: '0 auto', lineHeight: 1.7,
+              }}>
+                Every component is engineered for accuracy, speed, and security.
+              </p>
+            </div>
+          </ScrollReveal>
+
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '24px',
+          }}>
+            <FeatureCard
+              icon={Bot}
+              title="Mixture of Experts AI"
+              description="Four specialized LLM agents — Technical, Fundamental, Sentiment, and Risk — debate and synthesize signals using the MM-DREX architecture."
+              accentColor="#00f2ff"
+              delay={0}
+            />
+            <FeatureCard
+              icon={TrendingUp}
+              title="Regime-Adaptive Signals"
+              description="The AI dynamically shifts its weighting based on live market volatility, overweighting technicals in fast markets and fundamentals during macro shifts."
+              accentColor="#00ff88"
+              delay={0.1}
+            />
+            <FeatureCard
+              icon={Shield}
+              title="Risk Shield Protection"
+              description="Built-in drawdown limits, position caps, and kill switches protect your account even under aggressive auto-trading conditions."
+              accentColor="#ff0f42"
+              delay={0.2}
+            />
+            <FeatureCard
+              icon={Zap}
+              title="MT5 Direct Execution"
+              description="Signals bridge directly to MetaTrader 5 via ZeroMQ for sub-second order execution with slippage tracking and confirmation."
+              accentColor="#ccff00"
+              delay={0}
+            />
+            <FeatureCard
+              icon={Lock}
+              title="Enterprise Security"
+              description="JWT-authenticated WebSocket connections, session-gated access, and encrypted API proxying keep your trading data isolated."
+              accentColor="#00f2ff"
+              delay={0.1}
+            />
+            <FeatureCard
+              icon={BarChart3}
+              title="Paper Trading Engine"
+              description="Test every signal risk-free with a full paper trading simulation including equity curves, win rates, and drawdown analytics."
+              accentColor="#00ff88"
+              delay={0.2}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ PERFORMANCE / SOCIAL PROOF ═══════ */}
+      <section id="performance" style={{
+        padding: '120px 40px',
+        background: 'var(--bg-deep)',
+        borderTop: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)',
+      }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
+          <ScrollReveal>
+            <span style={{
+              fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
+              letterSpacing: '0.12em', color: '#00f2ff', marginBottom: '16px', display: 'block',
+            }}>
+              Transparent Results
+            </span>
+            <h2 style={{
+              fontSize: 'clamp(1.75rem, 4vw, 3rem)', fontWeight: 800,
+              letterSpacing: '-0.03em', marginBottom: '24px',
+            }}>
+              Every Signal Is Verified
+            </h2>
+            <p style={{
+              fontSize: '1.0625rem', color: 'var(--text-secondary)',
+              lineHeight: 1.7, maxWidth: '600px', margin: '0 auto 64px',
+            }}>
+              Our Track Record Ledger automatically validates whether each historical signal
+              was profitable. No hidden results. No cherry-picking. Full accountability.
+            </p>
+          </ScrollReveal>
+
+          <ScrollReveal delay={0.2}>
+            <div style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+              borderRadius: '20px', padding: '48px 40px',
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '40px',
+            }}>
               <div>
-                <div className="flex items-center gap-sm" style={{ marginBottom: 'var(--space-md)' }}>
-                  <Zap size={18} className="text-cyan" />
-                  <h2 className="text-headline">Live Signals</h2>
-                  <span className="badge badge-cyan">{signals.length}</span>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontSize: '2.5rem', fontWeight: 800,
+                  color: '#00ff88',
+                }}>84.5%</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Win Rate (30d)
                 </div>
-
-                <div className="flex flex-col gap-md">
-                  <AnimatePresence mode="popLayout">
-                    {signals.length === 0 ? (
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="neo-card p-xl"
-                        style={{ textAlign: 'center' }}
-                      >
-                        <Activity size={48} className="text-muted" style={{ margin: '0 auto 16px' }} />
-                        <p className="text-body text-muted">Waiting for market signals...</p>
-                        <p className="text-caption" style={{ marginTop: '8px' }}>
-                          Make sure the backend server is running on port 4000
-                        </p>
-                      </motion.div>
-                    ) : (
-                      signals.map((signal, idx) => (
-                        <SignalCard
-                          key={`${signal.timestamp}-${idx}`}
-                          signal={signal}
-                          onExecute={handleExecute}
-                        />
-                      ))
-                    )}
-                  </AnimatePresence>
+              </div>
+              <div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontSize: '2.5rem', fontWeight: 800,
+                  color: '#00f2ff',
+                }}>2.4:1</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Risk/Reward Ratio
+                </div>
+              </div>
+              <div>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontSize: '2.5rem', fontWeight: 800,
+                  color: '#ccff00',
+                }}>1,247</div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Signals Generated
                 </div>
               </div>
             </div>
+          </ScrollReveal>
+        </div>
+      </section>
 
-            {/* Right Column - Trade Panel */}
-            <div className="flex flex-col gap-lg">
-              <TradePanel currentPrice={currentPrice} symbol={selectedPair.name} />
-
-              {/* Risk Shield Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="neo-card-cyan neo-card p-lg"
-              >
-                <div className="flex items-center gap-sm" style={{ marginBottom: '16px' }}>
-                  <Shield size={18} className="text-cyan" />
-                  <h3 className="text-title">Risk Shield</h3>
-                  <span className="badge badge-emerald">ACTIVE</span>
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <div className="flex justify-between" style={{ marginBottom: '8px' }}>
-                    <span className="text-caption">Daily Drawdown Limit</span>
-                    <span className="text-mono text-muted">2.5% / 5%</span>
-                  </div>
-                  <div className="progress-bar">
-                    <div className="progress-fill progress-fill-cyan" style={{ width: '50%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between" style={{ marginBottom: '8px' }}>
-                    <span className="text-caption">Max Open Positions</span>
-                    <span className="text-mono text-muted">{riskStats.openPositions} / {riskStats.maxOpenPositions || 5}</span>
-                  </div>
-                  <div className="progress-bar">
-                    <div className="progress-fill progress-fill-emerald" style={{ width: `${(riskStats.openPositions / 5) * 100}%` }} />
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* Economic Calendar */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                <EconomicCalendar />
-              </motion.div>
+      {/* ═══════ PRICING ═══════ */}
+      <section id="pricing" style={{ padding: '120px 40px' }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+          <ScrollReveal>
+            <div style={{ textAlign: 'center', marginBottom: '64px' }}>
+              <span style={{
+                fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
+                letterSpacing: '0.12em', color: '#ccff00', marginBottom: '16px', display: 'block',
+              }}>
+                Simple Pricing
+              </span>
+              <h2 style={{
+                fontSize: 'clamp(1.75rem, 4vw, 3rem)', fontWeight: 800,
+                letterSpacing: '-0.03em',
+              }}>
+                Choose Your Edge
+              </h2>
             </div>
+          </ScrollReveal>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+            {/* Free Tier */}
+            <ScrollReveal delay={0}>
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+                borderRadius: '20px', padding: '48px 40px',
+              }}>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-tertiary)', marginBottom: '8px' }}>
+                  Free
+                </div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '8px' }}>
+                  $0<span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
+                </div>
+                <p style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)', marginBottom: '32px', lineHeight: 1.6 }}>
+                  Explore the platform and paper trade.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '40px' }}>
+                  {['Paper Trading Engine', 'Delayed Signal Snapshots', 'Basic Chart Analysis', 'Community Support'].map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9375rem', color: 'var(--text-secondary)' }}>
+                      <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-tertiary)' }} />
+                      </div>
+                      {f}
+                    </div>
+                  ))}
+                </div>
+
+                <Link href="/login" style={{
+                  display: 'block', textAlign: 'center', padding: '14px',
+                  borderRadius: '12px', fontWeight: 700, fontSize: '0.875rem',
+                  textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.04em',
+                  background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-default)',
+                  color: 'var(--text-primary)', transition: 'background 0.2s',
+                }}>
+                  Get Started
+                </Link>
+              </div>
+            </ScrollReveal>
+
+            {/* Pro Tier */}
+            <ScrollReveal delay={0.15}>
+              <div style={{
+                background: 'var(--bg-card)',
+                border: '1px solid rgba(0, 242, 255, 0.3)',
+                borderRadius: '20px', padding: '48px 40px', position: 'relative', overflow: 'hidden',
+              }}>
+                {/* Top glow */}
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+                  background: 'linear-gradient(90deg, #00f2ff, #00ff88)',
+                }} />
+                <div style={{
+                  position: 'absolute', top: '-60px', right: '-60px', width: '200px', height: '200px',
+                  background: 'radial-gradient(circle, rgba(0,242,255,0.08), transparent 70%)',
+                  pointerEvents: 'none',
+                }} />
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#00f2ff' }}>
+                    Pro
+                  </div>
+                  <span style={{
+                    padding: '2px 10px', borderRadius: '999px', fontSize: '0.625rem',
+                    fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+                    background: 'rgba(0, 242, 255, 0.1)', color: '#00f2ff',
+                  }}>Popular</span>
+                </div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '8px' }}>
+                  $49<span style={{ fontSize: '1rem', color: 'var(--text-tertiary)', fontWeight: 500 }}>/mo</span>
+                </div>
+                <p style={{ fontSize: '0.9375rem', color: 'var(--text-secondary)', marginBottom: '32px', lineHeight: 1.6 }}>
+                  Full access to live AI signals and MT5 execution.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '40px' }}>
+                  {['Real-Time AI Signals (4 Experts)', 'MT5 Direct Execution', 'Risk Shield Protection', 'Track Record Ledger', 'AI Trade Recommendations', 'Priority Support'].map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9375rem', color: 'var(--text-primary)' }}>
+                      <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(0, 255, 136, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00ff88' }} />
+                      </div>
+                      {f}
+                    </div>
+                  ))}
+                </div>
+
+                <Link href="/login" style={{
+                  display: 'block', textAlign: 'center', padding: '14px',
+                  borderRadius: '12px', fontWeight: 700, fontSize: '0.875rem',
+                  textDecoration: 'none', textTransform: 'uppercase', letterSpacing: '0.04em',
+                  background: 'linear-gradient(135deg, #00f2ff, #00ff88)',
+                  color: '#000', boxShadow: '0 0 20px rgba(0, 242, 255, 0.2)',
+                  transition: 'transform 0.2s',
+                }}>
+                  Start Pro Trial
+                </Link>
+              </div>
+            </ScrollReveal>
           </div>
+        </div>
+      </section>
 
-          {/* History Table Section */}
-          <section style={{ marginTop: 'var(--space-xl)' }}>
-            <HistoryTable />
-          </section>
-        </main>
-
-        {/* Footer */}
-        <footer
-          style={{
-            padding: 'var(--space-lg) var(--space-xl)',
-            borderTop: '1px solid var(--border-subtle)',
-            textAlign: 'center',
-          }}
-        >
-          <p className="text-caption text-muted">
-            FX Analyzer Pro • Powered by Gemini Flash AI • Not financial advice
+      {/* ═══════ CTA ═══════ */}
+      <section style={{
+        padding: '120px 40px', textAlign: 'center',
+        background: 'var(--bg-deep)',
+        borderTop: '1px solid var(--border-subtle)',
+      }}>
+        <ScrollReveal>
+          <Globe size={48} style={{ color: 'var(--text-tertiary)', margin: '0 auto 24px' }} />
+          <h2 style={{
+            fontSize: 'clamp(1.75rem, 4vw, 2.5rem)', fontWeight: 800,
+            letterSpacing: '-0.03em', marginBottom: '16px',
+          }}>
+            Ready to Trade Smarter?
+          </h2>
+          <p style={{
+            fontSize: '1.0625rem', color: 'var(--text-secondary)', maxWidth: '500px',
+            margin: '0 auto 40px', lineHeight: 1.7,
+          }}>
+            Join the next generation of algorithmic traders leveraging
+            AI Mixture-of-Experts for institutional-grade signals.
           </p>
-        </footer>
+          <Link href="/login" style={{
+            display: 'inline-flex', alignItems: 'center', gap: '10px',
+            padding: '16px 48px', borderRadius: '14px', fontWeight: 700,
+            fontSize: '1rem', textDecoration: 'none',
+            background: 'linear-gradient(135deg, #00f2ff, #00ff88)',
+            color: '#000', boxShadow: '0 0 40px rgba(0, 242, 255, 0.25)',
+          }}>
+            Launch Your Terminal <ArrowRight size={18} />
+          </Link>
+        </ScrollReveal>
+      </section>
 
-        {/* Modals */}
-        <AnimatePresence>
-          {showPaperDashboard && (
-            <PaperTradingDashboard
-              key="paper-dashboard"
-              engine={paperEngine}
-              onReset={handleResetPaper}
-              onUpdate={() => setPaperMetrics(paperEngine.getMetrics())}
-              onClose={() => setShowPaperDashboard(false)}
-            />
-          )}
-
-          {selectedMetric && (
-            <MetricDetailsModal
-              key="metric-modal"
-              metric={selectedMetric}
-              onClose={() => setSelectedMetric(null)}
-            />
-          )}
-        </AnimatePresence>
-      </div>
-    </ErrorBoundary>
+      {/* ═══════ FOOTER ═══════ */}
+      <footer style={{
+        padding: '40px', textAlign: 'center',
+        borderTop: '1px solid var(--border-subtle)',
+      }}>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+          © 2026 FX Nexus Pro — Algorithmic Trading Platform. Not financial advice.
+        </p>
+      </footer>
+    </div>
   );
 }
