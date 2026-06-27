@@ -124,9 +124,25 @@ async function startZMQ() {
         sock.subscribe("ticker");
         console.log("🔌 Connected to Python Engine via ZeroMQ");
 
-        for await (const [topic, message] of sock) {
-            const topicStr = topic.toString();
-            const msgStr = message.toString();
+        for await (const parts of sock) {
+            let topicStr = "";
+            let msgStr = "";
+
+            if (parts.length >= 2) {
+                topicStr = parts[0].toString();
+                msgStr = parts[1].toString();
+            } else if (parts.length === 1) {
+                const fullStr = parts[0].toString();
+                const spaceIndex = fullStr.indexOf(' ');
+                if (spaceIndex !== -1) {
+                    topicStr = fullStr.substring(0, spaceIndex);
+                    msgStr = fullStr.substring(spaceIndex + 1);
+                } else {
+                    topicStr = fullStr;
+                }
+            } else {
+                continue;
+            }
 
             try {
                 const data = JSON.parse(msgStr);
