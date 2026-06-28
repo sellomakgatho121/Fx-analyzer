@@ -52,6 +52,19 @@ def init_db():
                 created_at TEXT
             )
         """)
+
+        # Vibe Research Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vibe_research (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                run_type TEXT,
+                prompt TEXT,
+                command TEXT,
+                output TEXT,
+                status TEXT
+            )
+        """)
         
         # Insert Default Admin & User if empty
         cursor.execute("SELECT COUNT(*) FROM users")
@@ -122,3 +135,46 @@ def store_trade(trade_data):
         conn.close()
     except Exception as e:
         logging.error(f"Failed to store trade: {e}")
+
+
+def store_vibe_research(run_type, prompt, command, output, status):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO vibe_research (timestamp, run_type, prompt, command, output, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (datetime.now().isoformat(), run_type, prompt, command, output, status)
+        )
+        conn.commit()
+        conn.close()
+        logging.info(f"Stored vibe research run: {run_type}")
+    except Exception as e:
+        logging.error(f"Failed to store vibe research: {e}")
+
+
+def get_latest_vibe_research():
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vibe_research ORDER BY id DESC LIMIT 10")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        results = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "timestamp": r[1],
+                "run_type": r[2],
+                "prompt": r[3],
+                "command": r[4],
+                "output": r[5],
+                "status": r[6]
+            })
+        return results
+    except Exception as e:
+        logging.error(f"Failed to get vibe research: {e}")
+        return []

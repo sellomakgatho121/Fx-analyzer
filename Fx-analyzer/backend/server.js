@@ -32,8 +32,8 @@ app.use(express.json());
 const API_KEY = process.env.API_KEY || 'fx-analyzer-secure-key-2026';
 
 app.use((req, res, next) => {
-    // Health check is always public for Render
-    if (req.path === '/api/health') return next();
+    // Health check and vibe-research are public
+    if (req.path === '/api/health' || req.path === '/api/vibe-research') return next();
 
     const clientKey = req.headers['x-api-key'];
     if (!clientKey || clientKey !== API_KEY) {
@@ -122,6 +122,7 @@ async function startZMQ() {
         sock.connect("tcp://127.0.0.1:5555");
         sock.subscribe("signal");
         sock.subscribe("ticker");
+        sock.subscribe("vibe-research");
         console.log("🔌 Connected to Python Engine via ZeroMQ");
 
         for await (const parts of sock) {
@@ -156,6 +157,9 @@ async function startZMQ() {
                     if (basePrices[data.symbol.replace('/', '')]) {
                         basePrices[data.symbol.replace('/', '')] = data.price;
                     }
+                } else if (topicStr === 'vibe-research') {
+                    io.emit('vibe-research-update', data);
+                    console.log(`🔬 [PY-RESEARCH] New Vibe research update: ${data.run_type} -> ${data.status}`);
                 }
             } catch (e) {
                 console.error("Error parsing ZMQ message:", e);
@@ -449,6 +453,15 @@ app.get('/api/health', (req, res) => {
         connections: io.engine.clientsCount,
         db: db ? 'connected' : 'disconnected'
     });
+});
+
+app.get('/api/vibe-research', async (req, res) => {
+    try {
+        const rows = await dbAll('SELECT * FROM vibe_research ORDER BY id DESC LIMIT 10');
+        res.json(rows);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get('/api/signals', async (req, res) => {

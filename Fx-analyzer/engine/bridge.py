@@ -15,6 +15,7 @@ try:
     from engine.data_feed import DataFeed
     from engine.calendar_service import CalendarService
     from engine import database
+    from engine.vibe_research_service import VibeResearchService
 except ImportError:
     # Fallback for running inside engine/ dir
     from analyzer import TechnicalAnalyzer
@@ -23,6 +24,7 @@ except ImportError:
     from data_feed import DataFeed
     from calendar_service import CalendarService
     import database
+    from vibe_research_service import VibeResearchService
 
 # Setup Logging
 logging.basicConfig(
@@ -57,6 +59,7 @@ class AsyncEngineBridge:
         self.moe = MoEOrchestrator()  # Replaces LLMAnalyzer
         self.data_feed = DataFeed()
         self.calendar = CalendarService()
+        self.vibe_research = VibeResearchService()
 
         # Initialize Database
         database.init_db()
@@ -218,8 +221,12 @@ class AsyncEngineBridge:
             self.executor.shutdown()
 
     async def main(self):
-        # Run Command Listener and Main Loop concurrently
-        await asyncio.gather(self.listen_commands(), self.run_loop())
+        # Run Command Listener, Main Loop and Vibe Research background tasks concurrently
+        await asyncio.gather(
+            self.listen_commands(),
+            self.run_loop(),
+            self.vibe_research.run_research_tasks()
+        )
 
 
 if __name__ == "__main__":

@@ -85,9 +85,28 @@ class MoEOrchestrator:
 
         tech_res, fund_res, sent_res, risk_res = results
 
-        # 3. Synthesis
+        # 3. Fetch Vibe Research Context
+        try:
+            import database
+        except ImportError:
+            from engine import database
+
+        vibe_research_list = database.get_latest_vibe_research()
+        vibe_context = ""
+        if vibe_research_list:
+            vibe_context = "\n[Vibe AI Research Backtests]:\n"
+            for r in vibe_research_list:
+                output_lines = r['output'].split('\n')
+                summary_lines = [line for line in output_lines if line.startswith('- ') or line.startswith('**') or 'Return' in line or 'Drawdown' in line][:6]
+                vibe_context += f"- Run Type: {r['run_type']}\n  Prompt: {r['prompt']}\n  Status: {r['status']}\n  Key Insights:\n"
+                for line in summary_lines:
+                    vibe_context += f"    {line}\n"
+        else:
+            vibe_context = "\n[Vibe AI Research Backtests]: No current background backtests stored in database.\n"
+
+        # 4. Synthesis
         final_decision = await self._synthesize(
-            symbol, tech_res, fund_res, sent_res, risk_res, memory_context
+            symbol, tech_res, fund_res, sent_res, risk_res, memory_context, vibe_context
         )
 
         # Attach detailed breakdown for Frontend Visualization
@@ -97,11 +116,12 @@ class MoEOrchestrator:
             "sentiment": sent_res,
             "risk": risk_res,
             "memory": memory_context,
+            "vibe_research": vibe_research_list[:2] if vibe_research_list else []
         }
 
         return final_decision
 
-    async def _synthesize(self, symbol, tech, fund, sent, risk, memory):
+    async def _synthesize(self, symbol, tech, fund, sent, risk, memory, vibe_context=""):
         # Graceful Fallbacks for unavailable/rate-limited agents
         tech = tech or {"signal": "NEUTRAL", "confidence": 0.0, "reasoning": "Offline"}
         fund = fund or {"bias": "NEUTRAL", "confidence": 0.0, "reasoning": "Offline"}
@@ -125,14 +145,17 @@ class MoEOrchestrator:
         [Past Performance / Memory]:
         {memory}
 
+        [Vibe AI Research Backtests & Factor Benchmarks]:
+        {vibe_context}
+
         [Technical Analyst]: {tech.get("signal")} ({tech.get("confidence")}) - {tech.get("reasoning")}
         [Macro Strategist]: {fund.get("bias")} ({fund.get("confidence")}) - {fund.get("reasoning")}
         [Sentiment Engine]: {sent.get("sentiment")} ({sent.get("confidence")}) - {sent.get("reasoning")}
         [Risk Management]: Regime is {regime}. Max Leverage {risk.get("max_leverage")}, Advice: {risk.get("stop_loss_advice")}
 
         [DIRECTIVE]: {weighting_directive}
-
-        Task: Make a final deterministic trading decision for {symbol}. If multiple agents are Offline, drop confidence.
+        
+        Task: Make a final deterministic trading decision for {symbol}. Read the Vibe AI Research Backtests & Factor Benchmarks to inform your confidence scale and leverage decisions. For example, if a backtest for the asset shows robust gains, scale up confidence when signal aligns. If drawdown was high, scale down leverage and size. If multiple agents are Offline, drop confidence.
         
         Output EXACT JSON matching this schema:
         {{

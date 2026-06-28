@@ -33,6 +33,7 @@ import ModelSelector from '@/components/ModelSelector';
 import AgentDebate from '@/components/AgentDebate';
 import TrackRecordLedger from '@/components/TrackRecordLedger';
 import AIRecommender from '@/components/AIRecommender';
+import VibeResearchTerminal from '@/components/VibeResearchTerminal';
 import { CURRENCY_PAIRS, getPairBySymbol } from '@/data/currencyPairs';
 import PaperTradingEngine from '@/lib/paperTrading';
 import { NotificationProvider, useNotification } from '@/context/NotificationContext';
@@ -616,6 +617,9 @@ function Dashboard() {
 
               {/* Track Record Ledger — P&L verification */}
               <TrackRecordLedger signals={signals} />
+
+              {/* Vibe AI Research Terminal — Automated Backtests & Alpha Zoo */}
+              <VibeResearchTerminal socket={socketRef.current} />
             </div>
 
             {/* Right Column - Trade Panel */}
