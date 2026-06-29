@@ -2,6 +2,34 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, CandlestickSeries, ColorType, CrosshairMode } from 'lightweight-charts';
 
+// Convert trade entry to lightweight-charts marker
+function tradesToMarkers(trades) {
+    if (!trades || trades.length === 0) return [];
+    return trades
+        .filter(t => t.entryPrice && t.openTime)
+        .map(t => {
+            const time = Math.floor(new Date(t.openTime).getTime() / 1000);
+            const isBuy = t.action === 'BUY';
+            return {
+                time,
+                position: isBuy ? 'belowBar' : 'aboveBar',
+                color: isBuy ? '#ccff00' : '#ff0f42',
+                shape: isBuy ? 'arrowUp' : 'arrowDown',
+                text: `${isBuy ? 'B' : 'S'} ${t.lotSize?.toFixed(2) || ''}`,
+            };
+        });
+}
+
+function updateTradeMarkers(series, trades) {
+    if (!series) return;
+    try {
+        const markers = tradesToMarkers(trades);
+        series.setMarkers(markers);
+    } catch (e) {
+        console.warn('Failed to update trade markers:', e);
+    }
+}
+
 const timeframes = [
     { label: '1M', minutes: 1 },
     { label: '5M', minutes: 5 },
@@ -39,7 +67,7 @@ function generateMockCandles(count = 100, basePrice = 1.0850) {
     return candles;
 }
 
-export default function CandlestickChart({ symbol = 'EUR/USD', onPriceUpdate }) {
+export default function CandlestickChart({ symbol = 'EUR/USD', onPriceUpdate, trades = [] }) {
     const chartContainerRef = useRef(null);
     const chartRef = useRef(null);
     const candleSeriesRef = useRef(null);
@@ -117,6 +145,9 @@ export default function CandlestickChart({ symbol = 'EUR/USD', onPriceUpdate }) 
         // Fit content
         chart.timeScale().fitContent();
 
+        // Initial markers update
+        updateTradeMarkers(candleSeries, trades);
+
         // Simulate real-time updates
         const updateInterval = setInterval(() => {
             if (candleDataRef.current.length === 0) return;
@@ -156,6 +187,13 @@ export default function CandlestickChart({ symbol = 'EUR/USD', onPriceUpdate }) 
             chart.remove();
         };
     }, [activeTimeframe, onPriceUpdate]);
+
+    // Separate effect to update trade markers without recreating chart
+    useEffect(() => {
+        if (candleSeriesRef.current) {
+            updateTradeMarkers(candleSeriesRef.current, trades);
+        }
+    }, [trades]);
 
     return (
         <div className="chart-container">

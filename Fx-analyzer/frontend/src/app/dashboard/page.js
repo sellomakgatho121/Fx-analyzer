@@ -34,6 +34,9 @@ import AgentDebate from '@/components/AgentDebate';
 import TrackRecordLedger from '@/components/TrackRecordLedger';
 import AIRecommender from '@/components/AIRecommender';
 import VibeResearchTerminal from '@/components/VibeResearchTerminal';
+import MT5AccountPanel from '@/components/MT5AccountPanel';
+import AutoTradeSettings from '@/components/AutoTradeSettings';
+import TradeListPanel from '@/components/TradeListPanel';
 import { CURRENCY_PAIRS, getPairBySymbol } from '@/data/currencyPairs';
 import PaperTradingEngine from '@/lib/paperTrading';
 import { NotificationProvider, useNotification } from '@/context/NotificationContext';
@@ -51,8 +54,10 @@ export default function Page() {
 function Dashboard() {
   const { data: session, status } = useSession();
   const [selectedPair, setSelectedPair] = useState(CURRENCY_PAIRS[0]); // Default to EUR/USD
+  const selectedPairRef = useRef(selectedPair);
   const [favorites, setFavorites] = useState(['EURUSD', 'GBPUSD', 'USDJPY']);
   const [signals, setSignals] = useState([]);
+  const [trades, setTrades] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [currentPrice, setCurrentPrice] = useState(1.0865);
 
@@ -61,6 +66,14 @@ function Dashboard() {
 
   // Risk Shield State
   const [riskStats, setRiskStats] = useState({ maxDailyDrawdown: 500, profitLoss: 0, openPositions: 0 });
+  const [riskSettings, setRiskSettings] = useState({
+    maxDailyDrawdown: 500,
+    maxOpenPositions: 3,
+    maxRiskPerTrade: 2,
+    maxDailyTrades: 5,
+    minConfidence: 0.7,
+    tradingEnabled: true,
+  });
 
   // Paper Trading State
   const [tradingMode, setTradingMode] = useState('paper'); // 'paper' or 'live'
@@ -68,6 +81,7 @@ function Dashboard() {
   const [paperMetrics, setPaperMetrics] = useState(paperEngine.getMetrics());
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [showPaperDashboard, setShowPaperDashboard] = useState(false);
+  const paperEngineRef = useRef(paperEngine);
 
   const riskShieldRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -113,11 +127,20 @@ function Dashboard() {
     }
   }, [paperMetrics, tradingMode, paperEngine]);
 
+  // Sync trades state from paper engine when metrics change
+  useEffect(() => {
+    if (tradingMode === 'paper') {
+      const engineTrades = paperEngine.getAllTrades();
+      setTrades(engineTrades);
+    }
+  }, [paperMetrics, tradingMode, paperEngine]);
+
   // --- Socket Connection & Event Listeners ---
+  // Socket is initialized once on auth, not on pair change
   useEffect(() => {
     if (status !== 'authenticated' || !session) return;
 
-    socketRef.current = io('http://localhost:4000', {
+    const socket = io('http://localhost:4000', {
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       auth: {
@@ -127,16 +150,14 @@ function Dashboard() {
       }
     });
 
-    const socket = socketRef.current;
+    socketRef.current = socket;
 
     socket.on('connect', () => {
       setIsConnected(true);
-      // addNotification('success', 'System Online', 'Connected to FX Analysis Engine');
     });
 
     socket.on('disconnect', () => {
       setIsConnected(false);
-      // addNotification('error', 'Connection Lost', 'Reconnecting to engine...');
     });
 
     socket.on('fx-signal', (signal) => {
@@ -145,71 +166,23 @@ function Dashboard() {
         AlertService.playSignalAlert(signal.confidence);
       }
 
+      // Use the ref to avoid stale closure on selectedPair
+      const currentPair = selectedPairRef.current;
+
       // Only show signals for the selected pair
-      if (signal.symbol === selectedPair.name || signal.symbol === selectedPair.symbol) {
+      if (signal.symbol === currentPair.name || signal.symbol === currentPair.symbol) {
         setSignals(prev => [signal, ...prev].slice(0, 10));
         setStats(prev => ({
           ...prev,
           totalSignals: prev.totalSignals + 1,
         }));
 
-        // Auto-Trading Logic (Paper Mode Only)
-        if (isAutoTrading && tradingMode === 'paper') {
-          const result = paperEngine.executeTrade({
-            symbol: signal.symbol,
-            action: signal.action,
-            price: signal.entry || currentPrice,
-            lotSize: 0.01,
-            sl: signal.sl,
-            tp: signal.tp
-          });
-
-          if (result.success) {
-            addNotification(
-              'trade',
-              `Auto-Trade: ${signal.action} ${signal.symbol}`,
-              `Entry: ${result.trade.entryPrice.toFixed(5)} | Slippage: ${result.slippagePips.toFixed(1)} pips`
-            );
-            setPaperMetrics(paperEngine.getMetrics());
-          } else {
-            addNotification('error', 'Auto-Trade Failed', result.reason);
-          }
-        } else {
-          // Notify about new signal
-          addNotification(
-            'signal',
-            `New Signal: ${signal.symbol}`,
-            `${signal.action} @ ${signal.entry?.toFixed(5) || 'Market'} (${signal.confidence}% confidence)`
-          );
-        }
-      }
-    });
-
-    socket.on('notification', (rawMsg) => {
-      // Handle custom notifications (like DAILY_BRIEFING)
-      try {
-        // rawMsg format might be "notification {json...}" or just "{json...}" depending on bridge 
-        // Bridge sends: self.socket.send_string(f"notification {json.dumps(briefing)}")
-        // So we need to parse it if it wasn't caught by the main message handler
-      } catch (e) {
-        console.error(e);
-      }
-    });
-
-    socket.on('message', (msg) => {
-      const parts = msg.toString().split(' ');
-      const topic = parts[0];
-      const data = parts.slice(1).join(' ');
-
-      if (topic === 'notification') {
-        const notif = JSON.parse(data);
-        if (notif.type === 'DAILY_BRIEFING') {
-          addNotification(
-            'info',
-            `📅 Daily Briefing: ${notif.date}`,
-            `Analyzed ${notif.market_scan.length} Assets. High-Impact Events: ${notif.events.length}`
-          );
-        }
+        // Notify about new signal
+        addNotification(
+          'signal',
+          `New Signal: ${signal.symbol}`,
+          `${signal.action} @ ${signal.entry?.toFixed(5) || 'Market'} (${(signal.confidence * 100).toFixed(0)}% confidence)`
+        );
       }
     });
 
@@ -217,25 +190,44 @@ function Dashboard() {
       // history is [oldest, ..., newest] -> reverse to [newest, ..., oldest]
       const sortedHistory = [...history].reverse();
 
-      // Filter for selected pair matches live signal logic
+      // Use the ref to avoid stale closure on selectedPair
+      const currentPair = selectedPairRef.current;
+
+      // Filter for selected pair
       const relevantSignals = sortedHistory.filter(s =>
-        s.symbol === selectedPair.name || s.symbol === selectedPair.symbol
+        s.symbol === currentPair.name || s.symbol === currentPair.symbol
       );
 
       setSignals(relevantSignals);
+      // Also populate trades from signal history (if they have id/entry info)
+      const historicTrades = sortedHistory
+        .filter(s => s.entry || s.entryPrice)
+        .map(s => ({
+          id: s.id || `sig-${s.timestamp}`,
+          symbol: s.symbol,
+          action: s.action,
+          entryPrice: s.entry || s.entryPrice,
+          entry: s.entry || s.entryPrice,
+          lotSize: s.lotSize || 0.01,
+          openTime: s.timestamp,
+          status: 'closed',
+          profit: s.profit || 0,
+          pips: s.pips || 0,
+          type: 'auto',
+          closeReason: 'Signal Executed',
+        }));
+      if (historicTrades.length > 0) {
+        setTrades(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newOnes = historicTrades.filter(t => !existingIds.has(t.id));
+          return [...newOnes, ...prev];
+        });
+      }
     });
 
     // Risk Shield Listeners
     socket.on('risk-stats-update', (newStats) => {
       setRiskStats(prev => ({ ...prev, ...newStats }));
-      // Also update main stats for consistency if in Live mode
-      if (tradingMode === 'live') {
-        setStats(prev => ({
-          ...prev,
-          activeTrades: newStats.openPositions,
-          profit: newStats.profitLoss // This mock comes from server in verify logic
-        }));
-      }
     });
 
     socket.on('trade-rejected', (data) => {
@@ -243,18 +235,96 @@ function Dashboard() {
     });
 
     socket.on('trade-executed', (trade) => {
-      // Only notify if executed in backend (live mode handling mostly)
-      // Paper mode emits its own notifications locally
-      // But if we are in live mode, this confirms execution
-      if (tradingMode === 'live') {
-        addNotification('success', 'Order Filled', `${trade.action} ${trade.symbol} @ ${trade.executionPrice}`);
+      // Live trade confirmed by backend
+      if (trade) {
+        setTrades(prev => [{
+          id: trade.ticket || `live-${Date.now()}`,
+          symbol: trade.symbol,
+          action: trade.action,
+          entryPrice: trade.executionPrice || trade.price,
+          entry: trade.executionPrice || trade.price,
+          lotSize: trade.volume || trade.lotSize || 0.01,
+          openTime: trade.executedAt || new Date().toISOString(),
+          status: 'open',
+          profit: 0,
+          pips: 0,
+          type: 'manual',
+        }, ...prev]);
+
+        addNotification('success', 'Order Filled', `${trade.action} ${trade.symbol} @ ${trade.executionPrice || trade.price}`);
+      }
+    });
+
+    socket.on('message', (msg) => {
+      try {
+        const parts = msg.toString().split(' ');
+        const topic = parts[0];
+        const data = parts.slice(1).join(' ');
+
+        if (topic === 'notification') {
+          const notif = JSON.parse(data);
+          if (notif.type === 'DAILY_BRIEFING') {
+            addNotification(
+              'info',
+              `Daily Briefing: ${notif.date}`,
+              `Analyzed ${notif.market_scan?.length || 0} Assets. High-Impact Events: ${notif.events?.length || 0}`
+            );
+          }
+        }
+      } catch (e) {
+        // Silently ignore parse errors on raw messages
       }
     });
 
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      socket.disconnect();
+      socketRef.current = null;
     };
-  }, [selectedPair, isAutoTrading, tradingMode, paperEngine, currentPrice, addNotification, session, status]);
+  // Only re-initialize socket on auth change, NOT on selectedPair
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, status]);
+
+  // Auto-trading effect: executes paper trades when new signals arrive
+  const prevSignalCountRef = useRef(0);
+  useEffect(() => {
+    if (!isAutoTrading || tradingMode !== 'paper' || signals.length === 0) {
+      prevSignalCountRef.current = signals.length;
+      return;
+    }
+
+    // Only react to NEW signals (ones we haven't processed yet)
+    if (signals.length > prevSignalCountRef.current) {
+      const newSignals = signals.slice(0, signals.length - prevSignalCountRef.current);
+      prevSignalCountRef.current = signals.length;
+
+      newSignals.forEach(signal => {
+        const result = paperEngine.executeTrade({
+          symbol: signal.symbol,
+          action: signal.action,
+          price: signal.entry || currentPrice,
+          lotSize: 0.01,
+          sl: signal.sl,
+          tp: signal.tp,
+          type: 'auto'
+        });
+
+        if (result.success) {
+          setTrades(prev => [result.trade, ...prev]);
+          setPaperMetrics(paperEngine.getMetrics());
+          addNotification(
+            'trade',
+            `Auto-Trade: ${signal.action} ${signal.symbol}`,
+            `Entry: ${result.trade.entryPrice.toFixed(5)} | Slippage: ${result.slippagePips.toFixed(1)} pips`
+          );
+        } else {
+          addNotification('error', 'Auto-Trade Failed', result.reason);
+        }
+      });
+    } else {
+      prevSignalCountRef.current = signals.length;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signals, isAutoTrading, tradingMode]);
 
   const handlePriceUpdate = useCallback((price) => {
     setCurrentPrice(price);
@@ -262,6 +332,7 @@ function Dashboard() {
 
   const handlePairChange = useCallback((pair) => {
     setSelectedPair(pair);
+    selectedPairRef.current = pair;
     setSignals([]); // Clear signals when switching pairs
   }, []);
 
@@ -282,12 +353,14 @@ function Dashboard() {
         price: currentPrice,
         lotSize: signal.lotSize || 0.01,
         sl: signal.sl,
-        tp: signal.tp
+        tp: signal.tp,
+        type: 'manual'
       });
 
       if (result.success) {
         console.log('Paper trade executed:', result.trade);
         setPaperMetrics(paperEngine.getMetrics());
+        setTrades(prev => [result.trade, ...prev]);
       } else {
         console.warn('Paper trade failed:', result.reason);
       }
@@ -311,6 +384,62 @@ function Dashboard() {
     }));
   }, [tradingMode, paperEngine, currentPrice, addNotification]);
 
+  // TradePanel execution handler — accepts callback for UI feedback
+  const handleTradePanelExecute = useCallback((tradeData, resultCallback) => {
+    if (tradingMode === 'paper') {
+      const result = paperEngine.executeTrade({
+        symbol: tradeData.symbol,
+        action: tradeData.action,
+        price: tradeData.price,
+        lotSize: tradeData.lotSize || 0.01,
+        sl: tradeData.sl,
+        tp: tradeData.tp,
+        type: 'manual'
+      });
+
+      if (result.success) {
+        setPaperMetrics(paperEngine.getMetrics());
+        setTrades(prev => [result.trade, ...prev]);
+        resultCallback({ success: true, trade: result.trade });
+        addNotification('trade', `${tradeData.action} ${tradeData.symbol}`, `Paper entry at ${tradeData.price.toFixed(5)}`);
+      } else {
+        resultCallback({ success: false, reason: result.reason });
+        addNotification('error', 'Paper Trade Failed', result.reason);
+      }
+    } else {
+      // Live — emit to socket backend
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit('execute-trade', {
+          symbol: tradeData.symbol,
+          action: tradeData.action,
+          volume: tradeData.lotSize || 0.01,
+          price: tradeData.price,
+          timestamp: tradeData.timestamp,
+        });
+        addNotification('info', 'Sending Live Order', 'Validating with Risk Shield...');
+
+        // Listen for confirmation
+        const onExecuted = (trade) => {
+          socketRef.current.off('trade-executed', onExecuted);
+          socketRef.current.off('trade-rejected', onRejected);
+          resultCallback({ success: true, trade });
+        };
+        const onRejected = (data) => {
+          socketRef.current.off('trade-executed', onExecuted);
+          socketRef.current.off('trade-rejected', onRejected);
+          resultCallback({ success: false, reason: data.reason });
+        };
+        socketRef.current.once('trade-executed', onExecuted);
+        socketRef.current.once('trade-rejected', onRejected);
+      } else {
+        resultCallback({ success: false, reason: 'Engine disconnected' });
+        addNotification('error', 'Connection Error', 'Cannot execute trade - Engine disconnected');
+      }
+    }
+
+    setStats(prev => ({ ...prev, activeTrades: prev.activeTrades + 1 }));
+  }, [tradingMode, paperEngine, currentPrice, addNotification]);
+
   const handleModeChange = useCallback((mode) => {
     setTradingMode(mode);
     if (mode === 'paper') {
@@ -319,6 +448,7 @@ function Dashboard() {
   }, [paperEngine]);
 
   const handleResetPaper = useCallback(() => {
+    setTrades([]);
     paperEngine.reset();
     setPaperMetrics(paperEngine.getMetrics());
     addNotification('success', 'Paper Account Reset', 'Balance restored to $10,000.00');
@@ -327,6 +457,7 @@ function Dashboard() {
   // Reset Signals & Engine
   const handleResetAll = useCallback(() => {
     setSignals([]);
+    setTrades([]);
     paperEngine.reset();
     setPaperMetrics(paperEngine.getMetrics());
     setStats({
@@ -338,7 +469,15 @@ function Dashboard() {
     addNotification('success', 'System Reset', 'All signals cleared and paper account reset.');
   }, [paperEngine, addNotification]);
 
-  // Toggle Auto-Trading (Paper Mode Only)
+  // Auto-Trade Risk Settings Update
+  const handleUpdateRiskSettings = useCallback((newSettings) => {
+    setRiskSettings(prev => ({ ...prev, ...newSettings }));
+    // Sync to backend if live mode
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('update-risk-settings', newSettings);
+    }
+  }, []);
+
   // Toggle Auto-Trading (Paper Mode Only)
   const handleToggleAutoTrading = useCallback(() => {
     if (tradingMode !== 'paper') {
@@ -574,7 +713,7 @@ function Dashboard() {
             {/* Left Column - Chart & Signals */}
             <div className="flex flex-col gap-lg">
               {/* Candlestick Chart */}
-              <CandlestickChart symbol={selectedPair.name} onPriceUpdate={handlePriceUpdate} />
+              <CandlestickChart symbol={selectedPair.name} onPriceUpdate={handlePriceUpdate} trades={trades} />
 
               {/* AI Recommender — non-obtrusive insight panel */}
               <AIRecommender signals={signals} symbol={selectedPair.name} />
@@ -620,11 +759,20 @@ function Dashboard() {
 
               {/* Vibe AI Research Terminal — Automated Backtests & Alpha Zoo */}
               <VibeResearchTerminal socket={socketRef.current} />
+
+              {/* Trade History List */}
+              <TradeListPanel trades={trades} />
             </div>
 
             {/* Right Column - Trade Panel */}
             <div className="flex flex-col gap-lg">
-              <TradePanel currentPrice={currentPrice} symbol={selectedPair.name} />
+              <TradePanel
+                currentPrice={currentPrice}
+                symbol={selectedPair.name}
+                onExecute={handleTradePanelExecute}
+                tradingMode={tradingMode}
+                socket={socketRef.current}
+              />
 
               {/* Risk Shield Card */}
               <motion.div
@@ -659,6 +807,26 @@ function Dashboard() {
                   </div>
                 </div>
               </motion.div>
+
+              {/* MT5 Account Panel */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 }}
+              >
+                <MT5AccountPanel socket={socketRef.current} />
+              </motion.div>
+
+              {/* Auto-Trade Settings */}
+              {tradingMode === 'paper' && (
+                <AutoTradeSettings
+                  isAutoTrading={isAutoTrading}
+                  onToggleAutoTrade={handleToggleAutoTrading}
+                  tradingMode={tradingMode}
+                  riskSettings={riskSettings}
+                  onUpdateRiskSettings={handleUpdateRiskSettings}
+                />
+              )}
 
               {/* Economic Calendar */}
               <motion.div
