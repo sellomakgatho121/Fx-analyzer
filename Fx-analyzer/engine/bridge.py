@@ -1,7 +1,6 @@
 import asyncio
 import zmq
 import zmq.asyncio
-import time
 import json
 import logging
 from datetime import datetime
@@ -16,6 +15,7 @@ try:
     from engine.calendar_service import CalendarService
     from engine import database
     from engine.vibe_research_service import VibeResearchService
+    from engine.agent_bridge import AgentAnalysisBridge
 except ImportError:
     # Fallback for running inside engine/ dir
     from analyzer import TechnicalAnalyzer
@@ -25,6 +25,7 @@ except ImportError:
     from calendar_service import CalendarService
     import database
     from vibe_research_service import VibeResearchService
+    from agent_bridge import AgentAnalysisBridge
 
 # Setup Logging
 logging.basicConfig(
@@ -60,6 +61,7 @@ class AsyncEngineBridge:
         self.data_feed = DataFeed()
         self.calendar = CalendarService()
         self.vibe_research = VibeResearchService()
+        self.agent_bridge = AgentAnalysisBridge()
 
         # Initialize Database
         database.init_db()
@@ -144,14 +146,28 @@ class AsyncEngineBridge:
                             pass
                     response = {"status": "ok", "info": status}
 
-                elif cmd == "MT5_RECONNECT":
-                    logging.info("Reinitializing MT5 connection...")
-                    self.executor.shutdown()
-                    self.executor.initialize()
+                elif cmd == "ENGINE_AGENT_ANALYZE":
+                    query = msg.get("query", "")
+                    active_agents = msg.get("active_agents")
+                    debate_rounds = msg.get("debate_rounds")
+                    risk_rounds = msg.get("risk_rounds")
+
+                    if not query:
+                        response = {"status": "error", "message": "No query provided"}
+                    else:
+                        logging.info(f"Agent analysis requested: {query[:80]}")
+                        result = await self.agent_bridge.analyze(
+                            query,
+                            active_agents=active_agents,
+                            debate_rounds=debate_rounds,
+                            risk_rounds=risk_rounds,
+                        )
+                        response = result
+
+                elif cmd == "AGENT_BRIDGE_STATUS":
                     response = {
                         "status": "ok",
-                        "connected": self.executor.connected,
-                        "message": "MT5 reconnected" if self.executor.connected else "MT5 reconnection failed",
+                        "initialized": self.agent_bridge.initialized,
                     }
 
                 await self.cmd_socket.send_json(response)
@@ -262,11 +278,15 @@ class AsyncEngineBridge:
             self.executor.shutdown()
 
     async def main(self):
+        # Start agent bridge initialisation in background (non-blocking)
+        init_task = asyncio.create_task(self.agent_bridge.initialize())
+
         # Run Command Listener, Main Loop and Vibe Research background tasks concurrently
         await asyncio.gather(
             self.listen_commands(),
             self.run_loop(),
-            self.vibe_research.run_research_tasks()
+            self.vibe_research.run_research_tasks(),
+            init_task,
         )
 
 
