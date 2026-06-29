@@ -36,17 +36,22 @@ class MoEOrchestrator:
             logging.warning(f"Could not load models.json: {e}. Using defaults.")
             self.models = {}
 
+        default_tech = "openrouter:google/gemma-4-26b-a4b-it:free"
+        default_fund = "openrouter:google/gemma-4-31b-it:free"
+        default_sent = "openrouter:meta-llama/llama-3.3-70b-instruct:free"
+        default_risk = "openrouter:qwen/qwen3-next-80b-a3b-instruct:free"
+
         self.tech_agent = TechnicalAgent(
-            model_name=self.models.get("TechnicalExpert", "gemini-1.5-flash")
+            model_name=self.models.get("TechnicalExpert", default_tech)
         )
         self.fund_agent = FundamentalAgent(
-            model_name=self.models.get("FundamentalExpert", "gemini-1.5-pro")
+            model_name=self.models.get("FundamentalExpert", default_fund)
         )
         self.sent_agent = SentimentAgent(
-            model_name=self.models.get("SentimentExpert", "gemini-1.5-flash")
+            model_name=self.models.get("SentimentExpert", default_sent)
         )
         self.risk_agent = RiskAgent(
-            model_name=self.models.get("RiskManager", "gemini-1.5-flash")
+            model_name=self.models.get("RiskManager", default_risk)
         )
 
         self.rag = RAGLoader()
@@ -132,12 +137,12 @@ class MoEOrchestrator:
         regime = str(risk.get("regime", "NORMAL")).upper()
         
         weighting_directive = "Weight all experts equally."
-        if "HIGH VOLATILITY" in regime:
+        if "HIGH_VOL" in regime:
             weighting_directive = "MARKET REGIME: HIGH VOLATILITY. Heavily overweight the Technical Analyst. Disregard Fundamental long-term bias unless it perfectly aligns with short-term sentiment."
-        elif "LOW VOLATILITY" in regime or "RANGING" in regime:
+        elif "LOW_VOL" in regime:
             weighting_directive = "MARKET REGIME: RANGING. Overweight Technical mean-reversion signals. Ignore trend continuation signals."
-        elif "MACRO SHIFT" in regime:
-            weighting_directive = "MARKET REGIME: MACRO SHIFT. Heavily overweight the Macro Strategist. Technicals may provide false breakouts."
+        elif "EXTREME" in regime:
+            weighting_directive = "MARKET REGIME: EXTREME VOLATILITY. Heavily overweight the Risk Guardian. Recommend HOLD unless all agents align."
 
         prompt = f"""
         Act as an Advanced Algorithmic MM-DREX Head Trader. Review the reports from your localized Expert Models AND past performance.

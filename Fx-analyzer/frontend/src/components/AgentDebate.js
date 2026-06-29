@@ -3,22 +3,30 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Brain, TrendingUp, TrendingDown, BookOpen, AlertTriangle, ShieldCheck } from 'lucide-react';
 
+const AGENT_COLORS = {
+    cyan: { border: '#00f2ff', rgb: '0, 242, 255' },
+    emerald: { border: '#00ff88', rgb: '0, 255, 136' },
+    violet: { border: '#a855f7', rgb: '168, 85, 247' },
+    orange: { border: '#f97316', rgb: '249, 115, 22' },
+};
+
 const AgentCard = ({ title, agentType, analysis, icon: Icon, color }) => {
     if (!analysis) return null;
+    const palette = AGENT_COLORS[color] || AGENT_COLORS.cyan;
 
     return (
         <motion.div
             className="p-4 rounded-xl border backdrop-blur-md"
             style={{
-                borderColor: `var(--${color}-500)`,
-                background: `linear-gradient(145deg, rgba(var(--${color}-rgb), 0.05) 0%, rgba(var(--${color}-rgb), 0.1) 100%)`
+                borderColor: palette.border,
+                background: `linear-gradient(145deg, rgba(${palette.rgb}, 0.05) 0%, rgba(${palette.rgb}, 0.1) 100%)`
             }}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
         >
             <div className="flex items-center gap-2 mb-2">
-                <div className="p-2 rounded-lg" style={{ background: `rgba(var(--${color}-rgb), 0.2)` }}>
-                    <Icon size={16} style={{ color: `var(--${color}-400)` }} />
+                <div className="p-2 rounded-lg" style={{ background: `rgba(${palette.rgb}, 0.2)` }}>
+                    <Icon size={16} style={{ color: palette.border }} />
                 </div>
                 <h4 className="font-semibold text-sm text-gray-200">{title}</h4>
                 <span className="ml-auto text-xs font-mono opacity-70">
@@ -29,7 +37,7 @@ const AgentCard = ({ title, agentType, analysis, icon: Icon, color }) => {
             <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs">
                     <span className="opacity-60">Signal:</span>
-                    <span className="font-bold" style={{ color: `var(--${color}-400)` }}>
+                    <span className="font-bold" style={{ color: palette.border }}>
                         {analysis.signal || analysis.bias || analysis.sentiment || 'NEUTRAL'}
                     </span>
                 </div>

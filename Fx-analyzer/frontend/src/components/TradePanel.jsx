@@ -1,15 +1,17 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Calculator, AlertTriangle, Shield, Target, DollarSign, Crosshair, Zap, Divide } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Calculator, AlertTriangle, Shield, Target, DollarSign, Crosshair, Zap, Divide, Loader2, CheckCircle, XCircle } from 'lucide-react';
 
-export default function TradePanel({ currentPrice = 1.0865, symbol = 'EUR/USD' }) {
+export default function TradePanel({ currentPrice = 1.0865, symbol = 'EUR/USD', onExecute, tradingMode = 'paper', socket }) {
     const [lotSize, setLotSize] = useState(0.1);
     const [stopLoss, setStopLoss] = useState(20);
     const [takeProfit, setTakeProfit] = useState(40);
     const [riskPercent, setRiskPercent] = useState(1);
     const [isBuy, setIsBuy] = useState(true);
-    const [assetClass, setAssetClass] = useState('FOREX'); // FOREX, CRYPTO, INDICES, SHARES
+    const [assetClass, setAssetClass] = useState('FOREX');
+    const [execState, setExecState] = useState('idle'); // idle | pending | success | error
+    const [execResult, setExecResult] = useState(null);
 
     const lotPresets = [0.01, 0.05, 0.1, 0.5, 1.0];
     const accountBalance = 10000; // Mock balance
@@ -22,6 +24,66 @@ export default function TradePanel({ currentPrice = 1.0865, symbol = 'EUR/USD' }
     const accentColor = isBuy ? 'var(--acid-lime)' : 'var(--hyper-red)';
     const textAccent = isBuy ? 'text-[var(--acid-lime)]' : 'text-[var(--hyper-red)]';
     const borderAccent = isBuy ? 'border-[var(--acid-lime)]' : 'border-[var(--hyper-red)]';
+
+    const handleExecuteClick = useCallback(() => {
+        if (execState === 'pending') return;
+
+        setExecState('pending');
+        setExecResult(null);
+
+        const tradeData = {
+            symbol: symbol,
+            action: isBuy ? 'BUY' : 'SELL',
+            volume: lotSize,
+            price: currentPrice,
+            sl: currentPrice - (isBuy ? stopLoss * 0.0001 : -stopLoss * 0.0001),
+            tp: currentPrice + (isBuy ? takeProfit * 0.0001 : -takeProfit * 0.0001),
+            stopLoss,
+            takeProfit,
+            lotSize,
+            timestamp: new Date().toISOString(),
+        };
+
+        if (onExecute) {
+            // Parent handles both paper and live execution
+            onExecute(tradeData, (result) => {
+                if (result && result.success) {
+                    setExecState('success');
+                    setExecResult(result);
+                } else {
+                    setExecState('error');
+                    setExecResult(result || { reason: 'Execution failed' });
+                }
+                setTimeout(() => {
+                    setExecState('idle');
+                    setExecResult(null);
+                }, 3000);
+            });
+        } else if (socket && socket.connected) {
+            // Fallback: direct socket emit for live trading
+            socket.emit('execute-trade', {
+                symbol: symbol,
+                action: isBuy ? 'BUY' : 'SELL',
+                volume: lotSize,
+                price: currentPrice,
+                timestamp: new Date().toISOString()
+            });
+
+            socket.once('trade-executed', () => {
+                setExecState('success');
+                setTimeout(() => setExecState('idle'), 3000);
+            });
+            socket.once('trade-rejected', (data) => {
+                setExecState('error');
+                setExecResult(data);
+                setTimeout(() => { setExecState('idle'); setExecResult(null); }, 3000);
+            });
+        } else {
+            setExecState('error');
+            setExecResult({ reason: 'No execution handler connected' });
+            setTimeout(() => { setExecState('idle'); setExecResult(null); }, 3000);
+        }
+    }, [symbol, isBuy, lotSize, currentPrice, stopLoss, takeProfit, onExecute, socket, execState]);
 
     return (
         <motion.div
@@ -170,18 +232,60 @@ export default function TradePanel({ currentPrice = 1.0865, symbol = 'EUR/USD' }
                 </div>
             </div>
 
+            {/* Execution Status Feedback */}
+            <AnimatePresence>
+                {execState !== 'idle' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className={`p-3 rounded-lg text-sm font-medium flex items-center gap-2 ${
+                            execState === 'pending' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                            execState === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                            'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}
+                    >
+                        {execState === 'pending' && <Loader2 size={16} className="animate-spin" />}
+                        {execState === 'success' && <CheckCircle size={16} />}
+                        {execState === 'error' && <XCircle size={16} />}
+                        <span>
+                            {execState === 'pending' && `${tradingMode === 'paper' ? 'Paper' : 'Live'} trade executing...`}
+                            {execState === 'success' && `${tradingMode === 'paper' ? 'Paper' : 'Live'} order filled`}
+                            {execState === 'error' && (execResult?.reason || 'Execution failed')}
+                        </span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Execute Button */}
             <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className={`w-full py-4 mt-6 rounded-lg font-display font-bold text-lg tracking-widest flex items-center justify-center gap-3 transition-shadow ${isBuy
-                    ? 'bg-[var(--acid-lime)] text-black shadow-[0_0_40px_-10px_rgba(204,255,0,0.4)] hover:shadow-[0_0_60px_-10px_rgba(204,255,0,0.6)]'
-                    : 'bg-[var(--hyper-red)] text-white shadow-[0_0_40px_-10px_rgba(255,15,66,0.4)] hover:shadow-[0_0_60px_-10px_rgba(255,15,66,0.6)]'
-                    }`}
+                whileHover={{ scale: execState === 'pending' ? 1 : 1.02 }}
+                whileTap={{ scale: execState === 'pending' ? 1 : 0.98 }}
+                onClick={handleExecuteClick}
+                disabled={execState === 'pending'}
+                className={`w-full py-4 mt-4 rounded-lg font-display font-bold text-lg tracking-widest flex items-center justify-center gap-3 transition-all ${
+                    execState === 'pending'
+                        ? 'bg-white/10 text-white/50 cursor-not-allowed'
+                        : isBuy
+                            ? 'bg-[var(--acid-lime)] text-black shadow-[0_0_40px_-10px_rgba(204,255,0,0.4)] hover:shadow-[0_0_60px_-10px_rgba(204,255,0,0.6)] cursor-pointer'
+                            : 'bg-[var(--hyper-red)] text-white shadow-[0_0_40px_-10px_rgba(255,15,66,0.4)] hover:shadow-[0_0_60px_-10px_rgba(255,15,66,0.6)] cursor-pointer'
+                }`}
             >
-                <Zap size={20} fill="currentColor" />
-                EXECUTE {isBuy ? 'BUY' : 'SELL'}
+                {execState === 'pending' ? (
+                    <Loader2 size={20} className="animate-spin" />
+                ) : (
+                    <Zap size={20} fill={isBuy ? 'currentColor' : 'white'} />
+                )}
+                {execState === 'pending' ? 'EXECUTING...' : `EXECUTE ${isBuy ? 'BUY' : 'SELL'}`}
             </motion.button>
+
+            {/* Mode indicator */}
+            <div className="mt-3 flex items-center justify-center gap-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${tradingMode === 'paper' ? 'bg-cyan-400' : 'bg-rose-500'}`} />
+                <span className="text-[10px] uppercase tracking-wider text-white/30 font-mono">
+                    {tradingMode === 'paper' ? 'Paper Mode — No Real Money' : 'Live Mode — Real Execution'}
+                </span>
+            </div>
         </motion.div>
     );
 }

@@ -9,14 +9,24 @@ export class PaperTradingEngine {
         this.balance = initialBalance;
         this.positions = [];
         this.history = [];
+        this.allTrades = []; // flat chronological list of ALL trades (open + closed, manual + auto)
         this.equity = initialBalance;
     }
 
     /**
+     * Get all trades (open positions + closed history) merged chronologically
+     */
+    getAllTrades() {
+        return [...this.allTrades];
+    }
+
+    /**
      * Execute a paper trade
+     * @param {object} signal - trade signal
+     * @param {'manual'|'auto'} [signal.type] - 'manual' (from TradePanel) or 'auto' (from auto-trade)
      */
     executeTrade(signal) {
-        const { symbol, action, price, lotSize, sl, tp } = signal;
+        const { symbol, action, price, lotSize, sl, tp, type } = signal;
 
         // Calculate position value and required margin
         const positionValue = lotSize * 100000 * price; // Standard lot = 100,000 units
@@ -47,6 +57,8 @@ export class PaperTradingEngine {
             : executionPrice - spread / 2;
 
         // Create trade object
+        const tradeType = type === 'auto' ? 'auto' : 'manual';
+
         const trade = {
             id: `PT${crypto.randomUUID ? crypto.randomUUID().split('-')[0] : Date.now()}`,
             symbol,
@@ -57,6 +69,7 @@ export class PaperTradingEngine {
             tp,
             openTime: new Date().toISOString(),
             status: 'open',
+            type: tradeType, // 'manual' | 'auto'
             pips: 0,
             profit: 0,
             commission: lotSize * 7, // $7 per lot commission
@@ -64,6 +77,7 @@ export class PaperTradingEngine {
         };
 
         this.positions.push(trade);
+        this.allTrades.push(trade);
         this.balance -= requiredMargin;
 
         return {
@@ -154,6 +168,12 @@ export class PaperTradingEngine {
         const positionValue = position.lotSize * 100000 * position.entryPrice;
         const releasedMargin = positionValue / 100;
         this.balance += releasedMargin + position.profit;
+
+        // Update status in allTrades
+        const allTradeIdx = this.allTrades.findIndex(t => t.id === id);
+        if (allTradeIdx !== -1) {
+            this.allTrades[allTradeIdx] = { ...position };
+        }
 
         // Move to history
         this.history.push(position);
@@ -267,6 +287,7 @@ export class PaperTradingEngine {
         this.balance = this.initialBalance;
         this.positions = [];
         this.history = [];
+        this.allTrades = [];
         this.equity = this.initialBalance;
     }
 
@@ -279,6 +300,7 @@ export class PaperTradingEngine {
             balance: this.balance,
             positions: this.positions,
             history: this.history,
+            allTrades: this.allTrades,
             equity: this.equity,
             timestamp: new Date().toISOString()
         };
@@ -302,6 +324,14 @@ export class PaperTradingEngine {
             ...trade,
             id: (trade.id && trade.id !== '') ? trade.id : `PT${crypto.randomUUID ? crypto.randomUUID().split('-')[0] : Date.now()}-${Math.random().toString(36).substr(2, 5)}`
         }));
+
+        // Restore allTrades or reconstruct from positions + history
+        this.allTrades = state.allTrades && state.allTrades.length > 0
+            ? state.allTrades.map(t => ({
+                ...t,
+                id: (t.id && t.id !== '') ? t.id : `PT${crypto.randomUUID ? crypto.randomUUID().split('-')[0] : Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+            }))
+            : [...this.positions, ...this.history];
 
         this.equity = state.equity;
     }

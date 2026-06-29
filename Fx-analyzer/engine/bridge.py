@@ -95,8 +95,17 @@ class AsyncEngineBridge:
                         response = {"status": "error", "message": "No model specified"}
 
                 elif cmd == "GET_MODELS":
-                    # Return current config
-                    response = {"status": "ok", "models": self.moe.models}
+                    # Return all models whose API keys are configured
+                    try:
+                        from engine.agents.base import BaseAgent
+                    except ImportError:
+                        from agents.base import BaseAgent
+                    configured = BaseAgent.get_configured_models()
+                    response = {
+                        "status": "ok",
+                        "models": configured,
+                        "models_list": list(configured.values()),
+                    }
 
                 elif cmd == "EXECUTE_TRADE":
                     sys_symbol = msg.get("symbol")
@@ -112,6 +121,38 @@ class AsyncEngineBridge:
                             response = {"status": "error", "message": exec_res.get("reason", "Execution Failed")}
                     else:
                         response = {"status": "error", "message": "Missing symbol or action"}
+
+                elif cmd == "MT5_STATUS":
+                    status = {
+                        "connected": getattr(self.executor, 'connected', False),
+                        "account": None,
+                        "server": None,
+                        "balance": 0.0,
+                        "equity": 0.0,
+                    }
+                    # Try to fetch account info if connected
+                    if self.executor.connected:
+                        try:
+                            import MetaTrader5 as mt5
+                            account_info = mt5.account_info()
+                            if account_info:
+                                status["account"] = account_info.login
+                                status["server"] = account_info.server
+                                status["balance"] = account_info.balance
+                                status["equity"] = account_info.equity
+                        except Exception:
+                            pass
+                    response = {"status": "ok", "info": status}
+
+                elif cmd == "MT5_RECONNECT":
+                    logging.info("Reinitializing MT5 connection...")
+                    self.executor.shutdown()
+                    self.executor.initialize()
+                    response = {
+                        "status": "ok",
+                        "connected": self.executor.connected,
+                        "message": "MT5 reconnected" if self.executor.connected else "MT5 reconnection failed",
+                    }
 
                 await self.cmd_socket.send_json(response)
 

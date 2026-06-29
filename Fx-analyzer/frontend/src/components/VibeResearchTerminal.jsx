@@ -25,7 +25,7 @@ export default function VibeResearchTerminal({ socket }) {
   useEffect(() => {
     async function fetchRuns() {
       try {
-        const res = await fetch('http://localhost:4000/api/vibe-research');
+        const res = await fetch('/api/backend/vibe-research');
         if (res.ok) {
           const data = await res.json();
           setRuns(data);

@@ -40,7 +40,9 @@ class DataFeed:
             logging.error(f"DataFeed: MT5 Error {e}, falling back to Yahoo Finance")
             self.use_mt5 = False
 
-    def fetch_data(self, symbol: str, timeframe=mt5.TIMEFRAME_M1, limit=500) -> pd.DataFrame:
+    def fetch_data(self, symbol: str, timeframe=None, limit=500) -> pd.DataFrame:
+        if timeframe is None:
+            timeframe = mt5.TIMEFRAME_M1
         """
         Fetches OHLCV data. 
         """

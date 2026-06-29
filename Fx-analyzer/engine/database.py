@@ -1,9 +1,15 @@
 import sqlite3
 import json
+import hashlib
 import logging
 from datetime import datetime
 
 DB_FILE = "fx_analyzer.db"
+
+
+def _hash_password(password: str, salt: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with the email as salt."""
+    return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex()
 
 
 def init_db():
@@ -69,17 +75,19 @@ def init_db():
         # Insert Default Admin & User if empty
         cursor.execute("SELECT COUNT(*) FROM users")
         if cursor.fetchone()[0] == 0:
+            now = datetime.now().isoformat()
             cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
-                              VALUES ('devtest@fx.com', 'FxAdmin-9k$2pQ#8wLxZ5v!R@1', 'System Admin', 'admin', 'active', ?)''', (datetime.now().isoformat(),))
+                              VALUES (?, ?, ?, ?, ?, ?)''',
+                           ('devtest@fx.com', _hash_password('FxAdmin-9k$2pQ#8wLxZ5v!R@1', 'devtest@fx.com'), 'System Admin', 'admin', 'active', now))
             cursor.execute('''INSERT INTO users (email, password, name, role, subscription_status, created_at) 
-                              VALUES ('user@fx.com', 'password', 'Free User', 'user', 'inactive', ?)''', (datetime.now().isoformat(),))
+                              VALUES (?, ?, ?, ?, ?, ?)''',
+                           ('user@fx.com', _hash_password('password', 'user@fx.com'), 'Free User', 'user', 'inactive', now))
 
         conn.commit()
+        conn.close()
         logging.info("Database initialized successfully.")
-        return conn
     except Exception as e:
         logging.error(f"Database initialization failed: {e}")
-        return None
 
 
 def store_signal(signal_data):

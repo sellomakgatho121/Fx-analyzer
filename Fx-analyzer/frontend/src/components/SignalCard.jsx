@@ -3,10 +3,12 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TrendingUp, TrendingDown, Activity, AlertTriangle, ChevronDown, ChevronUp, Zap, Radio, Target } from 'lucide-react';
 
+import { useRouter } from 'next/navigation';
 import VerificationBadge from './VerificationBadge';
 import AgentDebate from './AgentDebate';
 
 export default function SignalCard({ signal, onExecute }) {
+    const router = useRouter();
     const [isExpanded, setIsExpanded] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
     const [isExecuted, setIsExecuted] = useState(false);
@@ -178,7 +180,7 @@ export default function SignalCard({ signal, onExecute }) {
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            window.location.href = `/signals/${signal.id}`;
+                            router.push(`/signals/${signal.id}`);
                         }}
                         className="px-4 border border-white/10 rounded-lg hover:bg-white/5 hover:border-white/20 transition-colors text-white font-mono text-xs font-bold tracking-wider flex items-center"
                     >

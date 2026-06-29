@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const crypto = require('crypto');
 const zmq = require('zeromq');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -180,9 +181,10 @@ app.post('/api/auth/verify', async (req, res) => {
     }
 
     try {
+        const hashedPassword = crypto.pbkdf2Sync(password, username, 100000, 32, 'sha256').toString('hex');
         const rows = await dbAll(
             "SELECT id, email, name, role, subscription_status FROM users WHERE email = ? AND password = ?",
-            [username, password]
+            [username, hashedPassword]
         );
 
         if (rows.length === 0) {
@@ -244,6 +246,26 @@ app.post('/api/admin/upgrade', async (req, res) => {
         return res.status(500).json({ error: 'Server error' });
     }
 });
+
+// --- ZMQ Engine Communication ---
+const zmqReq = new zmq.Request();
+let zmqReqConnected = false;
+
+async function sendCommand(payload) {
+    if (!zmqReqConnected) {
+        console.log("Connecting to Engine Command Socket...");
+        zmqReq.connect("tcp://127.0.0.1:5556");
+        zmqReqConnected = true;
+    }
+    try {
+        await zmqReq.send(JSON.stringify(payload));
+        const [result] = await zmqReq.receive();
+        return JSON.parse(result.toString());
+    } catch (e) {
+        console.error("ZMQ Command Failed:", e);
+        return { status: "error", message: "Engine Unreachable" };
+    }
+}
 
 // --- WebSocket Connection Handling ---
 io.use((socket, next) => {
@@ -399,30 +421,39 @@ io.on('connection', async (socket) => {
         io.emit('risk-settings-updated', riskSettings);
     });
 
-    // --- LLM Multi-Model Handling ---
-    const zmqReq = new zmq.Request();
-    let zmqReqConnected = false;
-
-    async function sendCommand(payload) {
-        if (!zmqReqConnected) {
-            console.log("Connecting to Engine Command Socket...");
-            zmqReq.connect("tcp://127.0.0.1:5556");
-            zmqReqConnected = true;
-        }
-        try {
-            await zmqReq.send(JSON.stringify(payload));
-            const [result] = await zmqReq.receive();
-            return JSON.parse(result.toString());
-        } catch (e) {
-            console.error("ZMQ Command Failed:", e);
-            return { status: "error", message: "Engine Unreachable" };
-        }
-    }
-
     socket.on('get-llm-models', async () => {
         const result = await sendCommand({ cmd: 'GET_MODELS' });
         if (result.status === 'ok') {
-            socket.emit('llm-models-list', result.models);
+            socket.emit('llm-models-list', result.models_list || []);
+        }
+    });
+
+    // MT5 Account Status & Management
+    socket.on('mt5-get-status', async () => {
+        const result = await sendCommand({ cmd: 'MT5_STATUS' });
+        if (result.status === 'ok') {
+            socket.emit('mt5-status', result.info);
+        } else {
+            socket.emit('mt5-status', { connected: false, account: null, server: null, balance: 0, equity: 0 });
+        }
+    });
+
+    socket.on('mt5-reconnect', async () => {
+        console.log('🔄 MT5 Reconnect requested');
+        const result = await sendCommand({ cmd: 'MT5_RECONNECT' });
+        if (result.status === 'ok') {
+            socket.emit('mt5-status', {
+                connected: result.connected,
+                account: null,
+                server: null,
+                balance: 0,
+                equity: 0,
+            });
+            socket.emit('notification', {
+                type: result.connected ? 'success' : 'error',
+                title: 'MT5 Connection',
+                message: result.message,
+            });
         }
     });
 
