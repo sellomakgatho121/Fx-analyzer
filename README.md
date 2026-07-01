@@ -126,24 +126,25 @@ python engine/bridge.py            # Engine
 ## Project Structure
 
 ```
-Fx-analyzer/
-├── frontend/        # Next.js 16 web application
-│   ├── src/
-│   │   ├── app/     # Pages & API routes
-│   │   ├── components/  # React components
-│   │   ├── store/   # Zustand state
-│   │   └── lib/     # Utilities & hooks
-│   └── package.json
-├── backend/         # Node.js API server
-│   ├── server.js    # Express + Socket.IO
-│   └── package.json
-├── engine/          # Python analysis engine
-│   ├── bridge.py    # ZMQ ↔ Node.js bridge
-│   ├── deep/        # Deep learning agents
-│   └── trading_agents/  # MCP-based agents
-├── docs/            # GitHub Pages landing
-├── config/          # System configuration
-└── data/            # Market data & research
+FX Analyzer and trading bot/
+└── Fx-analyzer/              # ← This repo root
+    ├── frontend/             # Next.js 16 web application
+    │   ├── src/
+    │   │   ├── app/          # Pages & API routes
+    │   │   ├── components/   # React components
+    │   │   ├── store/        # Zustand state
+    │   │   └── lib/          # Utilities & hooks
+    │   └── package.json
+    ├── backend/              # Node.js API server
+    │   ├── server.js         # Express + Socket.IO
+    │   └── package.json
+    ├── engine/               # Python analysis engine
+    │   ├── bridge.py         # ZMQ ↔ Node.js bridge
+    │   ├── deep/             # Deep learning agents
+    │   └── trading_agents/   # MCP-based agents
+    ├── docs/                 # GitHub Pages landing
+    ├── config/               # System configuration
+    └── data/                 # Market data & research
 ```
 
 ## Documentation
