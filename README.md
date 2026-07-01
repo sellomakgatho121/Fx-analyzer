@@ -4,7 +4,7 @@
 
 [![CI Status](https://github.com/sellomakgatho121/Fx-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/sellomakgatho121/Fx-analyzer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Live Demo](https://img.shields.io/badge/demo-live-brightgreen)](https://sellomakgatho121.github.io/Fx-analyzer)
+[![Live Demo](https://img.shields.io/badge/🌐_live-pages-00f2ff)](https://sellomakgatho121.github.io/Fx-analyzer)
 [![Vercel](https://img.shields.io/badge/deployed-vercel-000?logo=vercel)](https://frontend-jjh4l1mja-sellomakgatho121-2317s-projects.vercel.app)
 
 ---
