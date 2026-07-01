@@ -45,6 +45,21 @@
   --glow-cyan: 0 0 20px rgba(0, 242, 255, 0.3), 0 0 40px rgba(0, 242, 255, 0.15);
   --glow-subtle: 0 4px 20px rgba(0, 0, 0, 0.4);
 
+  /* Agent-Specific Colors */
+  --agent-technical: #00f2ff;
+  --agent-fundamental: #00ff88;
+  --agent-sentiment: #a855f7;
+  --agent-risk: #f97316;
+  --agent-lstm: #ff6b9d;
+  --agent-cnn: #fbbf24;
+  --agent-bull: #00ff88;
+  --agent-bear: #ff0f42;
+
+  /* Sidebar */
+  --sidebar-bg: linear-gradient(180deg, #0a0a0f 0%, #050508 100%);
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 64px;
+
   /* Gradients */
   --gradient-emerald: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
   --gradient-ruby: linear-gradient(135deg, #ff3366 0%, #cc2952 100%);
@@ -671,6 +686,69 @@ h6 {
   gap: var(--space-lg);
 }
 
+/* New Sidebar Container */
+.sidebar-container {
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.sidebar-container .sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.sidebar-container .sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* Main Content Area */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg-void);
+  position: relative;
+}
+
+.main-content > main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Shell Header Styles */
+.shell-header .sidebar-mobile-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* Status Bar */
+.status-bar {
+  user-select: none;
+}
+
+/* Hide sidebar mobile toggle on large screens, show on small */
+@media (min-width: 1024px) {
+  .sidebar-mobile-toggle {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .sidebar-container {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 200;
+  }
+}
+
 /* ======================================
    LOADING STATES
    ====================================== */
@@ -764,6 +842,21 @@ h6 {
 
 .animate-scale-in {
   animation: scale-in var(--duration-normal) var(--ease-out-back);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+/* Mask utilities */
+.mask-linear-fade {
+  mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
 }
 
 /* ======================================

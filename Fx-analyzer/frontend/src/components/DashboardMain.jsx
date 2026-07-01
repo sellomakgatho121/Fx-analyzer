@@ -43,7 +43,7 @@ import { NotificationProvider, useNotification } from '@/context/NotificationCon
 import { AlertService } from '@/lib/AlertService';
 import { useSession } from 'next-auth/react';
 
-export default function Page() {
+export default function DashboardMain() {
   return (
     <NotificationProvider>
       <Dashboard />

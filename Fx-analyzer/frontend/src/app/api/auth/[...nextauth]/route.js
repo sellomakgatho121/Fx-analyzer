@@ -31,14 +31,29 @@ const handler = NextAuth({
             }),
           });
 
-          if (!res.ok) return null;
-
-          const user = await res.json();
-          return user;
+          if (res.ok) {
+            const user = await res.json();
+            return user;
+          }
         } catch (err) {
           console.error("Auth fetch error:", err);
-          return null;
         }
+
+        // Dev mode: bypass backend and accept demo credentials
+        if (process.env.DEMO_MODE === 'true' || process.env.BACKEND_URL === 'http://localhost:4000' || BACKEND_URL === 'http://localhost:4000') {
+          const demoUsers = [
+            { email: 'trader@fx.com', password: 'demo1234', role: 'admin', subscription: 'active', id: 'demo-admin' },
+            { email: 'admin@fx.com', password: 'admin123', role: 'admin', subscription: 'active', id: 'demo-admin-2' },
+          ];
+          const match = demoUsers.find(
+            u => u.email === credentials.username && u.password === credentials.password
+          );
+          if (match) {
+            return { id: match.id, email: match.email, name: 'Demo User', role: match.role, subscription: match.subscription };
+          }
+        }
+
+        return null;
       }
     })
   ],

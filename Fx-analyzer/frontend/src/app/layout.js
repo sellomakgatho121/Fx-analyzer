@@ -3,6 +3,7 @@ import './globals.css';
 import AnimatedBackground from '../components/AnimatedBackground';
 import { Providers } from '../components/Providers';
 import { Toaster } from 'react-hot-toast';
+import HydrationSanitizer from '../components/HydrationSanitizer';
 
 const outfit = Outfit({
   variable: '--font-display',
@@ -28,7 +29,11 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${outfit.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
-      <body className="antialiased min-h-screen relative overflow-x-hidden selection:bg-lime-400 selection:text-black">
+      <body className="antialiased min-h-screen relative overflow-x-hidden selection:bg-lime-400 selection:text-black" suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function(){document.querySelectorAll('*').forEach(function(e){[].filter.call(e.attributes,function(a){return a.name==='bis_skin_checked'||a.name==='bis_register'||a.name.indexOf('__processed_')===0}).forEach(function(a){e.removeAttribute(a.name)})})})();
+        `}} />
+        <HydrationSanitizer />
         <Providers>
           <Toaster position="top-right" toastOptions={{
             style: {
