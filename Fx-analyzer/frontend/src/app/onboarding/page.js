@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldAlert, Server, CheckCircle2, ChevronRight, Settings } from "lucide-react";
@@ -13,7 +12,6 @@ const BROKERS = [
 ];
 
 export default function OnboardingPage() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -24,12 +22,6 @@ export default function OnboardingPage() {
     maxDrawdown: "500"
   });
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
 
   const handleNext = () => setStep(s => s + 1);
   const handleBack = () => setStep(s => s - 1);
@@ -43,10 +35,6 @@ export default function OnboardingPage() {
   };
 
   const selectedBrokerConfig = BROKERS.find(b => b.id === formData.broker);
-
-  if (status === "loading") {
-    return <div style={{ minHeight: "100vh", background: "var(--bg-void)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading...</div>;
-  }
 
   return (
     <div style={{

@@ -41,7 +41,6 @@ import { CURRENCY_PAIRS, getPairBySymbol } from '@/data/currencyPairs';
 import PaperTradingEngine from '@/lib/paperTrading';
 import { NotificationProvider, useNotification } from '@/context/NotificationContext';
 import { AlertService } from '@/lib/AlertService';
-import { useSession } from 'next-auth/react';
 
 export default function DashboardMain() {
   return (
@@ -52,7 +51,6 @@ export default function DashboardMain() {
 }
 
 function Dashboard() {
-  const { data: session, status } = useSession();
   const [selectedPair, setSelectedPair] = useState(CURRENCY_PAIRS[0]); // Default to EUR/USD
   const selectedPairRef = useRef(selectedPair);
   const [favorites, setFavorites] = useState(['EURUSD', 'GBPUSD', 'USDJPY']);
@@ -136,18 +134,16 @@ function Dashboard() {
   }, [paperMetrics, tradingMode, paperEngine]);
 
   // --- Socket Connection & Event Listeners ---
-  // Socket is initialized once on auth, not on pair change
+  // Socket is initialized once on mount, not on pair change
   useEffect(() => {
-    if (status !== 'authenticated' || !session) return;
-
     const socket = io('http://localhost:4000', {
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       auth: {
-        token: session.user.id,
-        role: session.user.role,
-        subscription: session.user.subscription
-      }
+        token: 'default-user',
+        role: 'admin',
+        subscription: 'active',
+      },
     });
 
     socketRef.current = socket;
@@ -280,9 +276,9 @@ function Dashboard() {
       socket.disconnect();
       socketRef.current = null;
     };
-  // Only re-initialize socket on auth change, NOT on selectedPair
+  // Only initialize socket once on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, status]);
+  }, []);
 
   // Auto-trading effect: executes paper trades when new signals arrive
   const prevSignalCountRef = useRef(0);

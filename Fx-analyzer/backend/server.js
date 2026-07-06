@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const crypto = require('crypto');
 const zmq = require('zeromq');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
@@ -173,55 +172,6 @@ async function startZMQ() {
 
 startZMQ();
 
-// --- Auth API Endpoint for NextAuth (Credentials) ---
-app.post('/api/auth/verify', async (req, res) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Missing credentials' });
-    }
-
-    try {
-        const hashedPassword = crypto.pbkdf2Sync(password, username, 100000, 32, 'sha256').toString('hex');
-        const rows = await dbAll(
-            "SELECT id, email, name, role, subscription_status FROM users WHERE email = ? AND password = ?",
-            [username, hashedPassword]
-        );
-
-        if (rows.length === 0) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
-
-        const user = rows[0];
-        return res.json({
-            id: user.id.toString(),
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            subscription: user.subscription_status,
-        });
-    } catch (err) {
-        console.error("Auth DB Error:", err);
-        return res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// --- Auth Endpoint for NextAuth (OAuth Check) ---
-app.get('/api/auth/check-user', async (req, res) => {
-    const email = req.query.email;
-    if (!email) return res.status(400).json({ error: 'Missing email' });
-
-    try {
-        const rows = await dbAll("SELECT id, email, name, role, subscription_status FROM users WHERE email = ?", [email]);
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'User not found in DB' });
-        }
-        return res.json(rows[0]);
-    } catch (err) {
-        console.error("Auth Check Error:", err);
-        return res.status(500).json({ error: 'Server error' });
-    }
-});
-
 // --- Admin: List Users ---
 app.get('/api/admin/users', async (req, res) => {
     try {
@@ -268,24 +218,10 @@ async function sendCommand(payload) {
 }
 
 // --- WebSocket Connection Handling ---
-io.use((socket, next) => {
-    const auth = socket.handshake.auth;
-    if (!auth || !auth.token) {
-        return next(new Error("Authentication error: Missing token"));
-    }
-    socket.user = auth;
-    next();
-});
-
 io.on('connection', async (socket) => {
-    console.log('✅ Client connected:', socket.id, 'User:', socket.user.token);
+    console.log('✅ Client connected:', socket.id, 'User:', socket.user?.token || 'anonymous');
 
-    if (socket.user.subscription === 'active') {
-        socket.join('premium');
-        console.log(`User ${socket.user.token} joined PREMIUM room`);
-    } else {
-        socket.emit('notification', { type: 'warning', title: 'Free Tier', message: 'You are on the free tier. Live signals are blocked. Upgrade to execute trades.' });
-    }
+    socket.join('premium');
 
     // Send initial data
     socket.emit('ticker-update', generateTickerData());

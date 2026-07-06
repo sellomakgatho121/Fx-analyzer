@@ -7,7 +7,6 @@ import {
   useAgentStore,
   useAnalysisStore,
 } from '@/store';
-import { useSession } from 'next-auth/react';
 
 /**
  * useSocket — React hook that bridges socket.io events to Zustand stores.
@@ -25,7 +24,6 @@ import { useSession } from 'next-auth/react';
  *  - System status → sessionStore
  */
 export default function useSocket() {
-  const { data: session, status } = useSession();
   const initialized = useRef(false);
 
   // ── Session store actions ──────────────────────────────────────────
@@ -58,12 +56,12 @@ export default function useSocket() {
 
   // ── Connect callback ───────────────────────────────────────────────
   const connect = useCallback(() => {
-    if (!session || initialized.current) return;
+    if (initialized.current) return;
 
     socketEventBus.connect('http://localhost:4000', {
-      token: session.user.id,
-      role: session.user.role,
-      subscription: session.user.subscription,
+      token: 'default-user',
+      role: 'admin',
+      subscription: 'active',
     });
 
     initialized.current = true;
@@ -194,7 +192,6 @@ export default function useSocket() {
       }
     });
   }, [
-    session,
     setConnected,
     setConnectionError,
     setModelName,
@@ -216,21 +213,14 @@ export default function useSocket() {
     setRAGContext,
   ]);
 
-  // ── Auto-connect / disconnect on auth change ───────────────────────
+  // ── Auto-connect on mount ──────────────────────────────────────────
   useEffect(() => {
-    if (status === 'authenticated' && session) {
-      connect();
-    }
-    if (status === 'unauthenticated') {
-      socketEventBus.disconnect();
-      initialized.current = false;
-      logout();
-    }
+    connect();
 
     return () => {
       // Cleanup on unmount (but don't disconnect if we're just re-rendering)
     };
-  }, [status, session, connect, logout]);
+  }, [connect]);
 
   // Return event bus for direct emit access
   return socketEventBus;

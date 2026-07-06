@@ -1,27 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Shield, Users, RefreshCw } from 'lucide-react';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
 
 export default function AdminDashboard() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (!session || session.user.role !== 'admin') {
-      router.push('/dashboard');
-      return;
-    }
-
     fetchUsers();
-  }, [session, status, router]);
+  }, []);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -42,7 +32,7 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
-  if (status === 'loading' || loading) {
+  if (loading) {
     return (
       <div style={{
         minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',

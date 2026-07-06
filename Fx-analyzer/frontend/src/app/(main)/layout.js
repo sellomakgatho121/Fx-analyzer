@@ -1,7 +1,5 @@
 'use client';
 import React, { useState, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -390,44 +388,12 @@ function StatusBar() {
 
 // ── Main Shell Layout ─────────────────────────────────────────────────
 export default function ShellLayout({ children }) {
-  const { data: session, status } = useSession();
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setConnected = useSessionStore((s) => s.setConnected);
 
   // Initialize socket connection
   useSocket();
-
-  // Protect the route — redirect to login if not authenticated
-  if (status === 'unauthenticated') {
-    redirect('/login');
-  }
-
-  // Show loading while checking auth
-  if (status === 'loading') {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          background: 'var(--bg-void)',
-        }}
-      >
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            border: '2px solid var(--border-subtle)',
-            borderTopColor: 'var(--neon-cyan)',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-          }}
-        />
-      </div>
-    );
-  }
 
   return (
     <div

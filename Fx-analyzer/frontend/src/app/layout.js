@@ -1,7 +1,6 @@
 import { Outfit, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import AnimatedBackground from '../components/AnimatedBackground';
-import { Providers } from '../components/Providers';
 import { Toaster } from 'react-hot-toast';
 import HydrationSanitizer from '../components/HydrationSanitizer';
 
@@ -34,19 +33,17 @@ export default function RootLayout({ children }) {
           (function(){document.querySelectorAll('*').forEach(function(e){[].filter.call(e.attributes,function(a){return a.name==='bis_skin_checked'||a.name==='bis_register'||a.name.indexOf('__processed_')===0}).forEach(function(a){e.removeAttribute(a.name)})})})();
         `}} />
         <HydrationSanitizer />
-        <Providers>
-          <Toaster position="top-right" toastOptions={{
-            style: {
-              background: '#333',
-              color: '#fff',
-              border: '1px solid #ffffff20',
-            },
-          }} />
-          <AnimatedBackground />
-          <main className="relative z-10">
-            {children}
-          </main>
-        </Providers>
+        <Toaster position="top-right" toastOptions={{
+          style: {
+            background: '#333',
+            color: '#fff',
+            border: '1px solid #ffffff20',
+          },
+        }} />
+        <AnimatedBackground />
+        <main className="relative z-10">
+          {children}
+        </main>
       </body>
     </html>
   );
